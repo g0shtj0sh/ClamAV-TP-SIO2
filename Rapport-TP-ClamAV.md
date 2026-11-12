@@ -959,22 +959,7 @@ Le journal de ce déclenchement contient un avertissement émis par systemd lors
 
 Systemd interprète lui-même les séquences d'échappement dans les lignes `ExecStart` avant de transmettre les arguments au programme. La séquence `\.` n'ayant aucune signification pour lui, il l'ignore — et transmet donc à `clamscan` une expression régulière différente de celle écrite. **L'exclusion des répertoires de cache ne s'appliquait pas.**
 
-Les chiffres le confirment. En comparant les deux exécutions du même service sur la même machine :
-
-| Exécution | Répertoires | Fichiers | Données analysées |
-| --- | --- | --- | --- |
-| Manuelle, 10:18 | 112 | 73 | 0,27 Mo |
-| Automatique, 10:49 | 129 | 99 | **29,21 Mo** |
-
-L'écart de volume ne s'explique pas par les deux fichiers de test de 68 octets : ce sont bien les données de cache, accumulées entre-temps par l'installation et l'utilisation de ClamUI, qui ont été analysées alors qu'elles auraient dû être écartées.
-
-#### Portée du défaut
-
-Il faut mesurer ce que cette anomalie affecte, et ce qu'elle n'affecte pas :
-
-- **La détection n'est pas compromise.** Analyser davantage de fichiers que prévu ne fait manquer aucune menace ; au contraire, le périmètre couvert est plus large.
-- **C'est la performance qui est touchée.** Les caches sont volumineux, changent sans cesse et ne présentent pas d'intérêt pour une analyse antivirale. Sur un poste réellement utilisé, où ils peuvent atteindre plusieurs gigaoctets, la durée du scan hebdomadaire s'en trouverait fortement allongée.
-- **Le défaut était silencieux.** Rien dans la sortie de `clamscan` ne signale qu'une exclusion a été ignorée. Seul le journal de systemd, consulté pour une tout autre raison, a permis de le découvrir. C'est un argument concret en faveur de la lecture des journaux après la mise en place d'une tâche planifiée, plutôt que de se contenter de constater qu'elle « a marché ».
+Le message de systemd est ici la preuve directe du défaut : il nomme l'argument concerné et annonce explicitement qu'il ignore la séquence.
 
 #### Correction
 
@@ -986,7 +971,50 @@ sudo systemctl daemon-reload
 grep ExecStart /etc/systemd/system/scan-home-hebdo.service
 ```
 
-_Résultat de la correction et contre-épreuve à consigner._
+La ligne corrigée se termine désormais par `--exclude-dir=^/home/[^/]+/[.]cache /home`.
+
+![Correction de l'expression régulière](images/etape5-correction-exclusion.png)
+
+#### Contre-épreuve
+
+```bash
+sudo systemctl start scan-home-hebdo.service
+sudo journalctl -u scan-home-hebdo.service --since "-3min" --no-pager | grep -E 'escape|Scanned|Data scanned'
+```
+
+**Résultat observé :** l'avertissement `Ignoring unknown escape sequences` **a disparu** — le filtre `escape` de la commande ne retourne plus aucune ligne. La correction est donc effective : systemd transmet maintenant l'expression régulière telle qu'elle est écrite.
+
+En revanche, les compteurs ne bougent pas :
+
+| Exécution | Répertoires | Fichiers | Données analysées |
+| --- | --- | --- | --- |
+| Manuelle, 10:18 | 112 | 73 | 0,27 Mo |
+| Automatique, 10:49 | 129 | 99 | 29,21 Mo |
+| Après correction, 10:57 | 129 | 97 | **29,21 Mo** |
+
+Ce résultat invite à reprendre l'interprétation de l'écart de volume constaté précédemment, et il montre l'intérêt d'une contre-épreuve : sans elle, j'aurais attribué au défaut d'échappement un effet qu'il n'avait pas.
+
+#### Origine réelle du volume analysé
+
+Les 29,21 Mo ne proviennent pas des répertoires de cache, puisque le volume reste identique une fois l'exclusion réellement appliquée. L'explication se trouve dans le détail de l'exécution de 10:49, qui indiquait `Data read: 14.54 MB (ratio 2.01:1)`.
+
+Entre l'exécution de 10:18 et celle de 10:49, les **paquets d'installation de ClamUI** ont été téléchargés dans `/home/administrateur/clamui`, soit 13,06 Mio et 517 Kio, environ 14,5 Mo au total — exactement le volume lu. `clamscan` décompresse les archives pour en analyser le contenu, ce qui porte le volume *analysé* au double du volume *lu*, conformément au ratio annoncé.
+
+L'écart s'explique donc entièrement par la présence de ces deux paquets `.deb` dans l'arborescence analysée, et non par les caches. La baisse de 99 à 97 fichiers entre 10:49 et 10:57 correspond quant à elle aux deux fichiers de test mis en quarantaine lors de l'exécution précédente.
+
+Quant aux répertoires de cache, ils sont bien parcourus — 129 répertoires dans les deux cas —, mais ils ne contiennent sur cette machine récente qu'un volume négligeable de données. L'exclusion, désormais fonctionnelle, n'a tout simplement rien de conséquent à écarter ici.
+
+#### Portée réelle du défaut
+
+Avec cette correction d'analyse, la portée du défaut se résume ainsi :
+
+- **Le défaut était réel**, attesté par le message de systemd, et il est corrigé.
+- **Son effet sur cette machine était nul en pratique**, les caches y étant quasiment vides. Il se serait manifesté sur un poste utilisé depuis plusieurs mois, où les caches de navigateur et d'applications atteignent couramment plusieurs gigaoctets et allongeraient sensiblement la durée du scan hebdomadaire.
+- **La détection n'était à aucun moment compromise** : une exclusion ignorée conduit à analyser plus, jamais moins.
+- **Le défaut était silencieux côté `clamscan`.** Seul le journal de systemd le signalait. C'est un argument concret en faveur de la lecture des journaux après la mise en place d'une tâche planifiée, plutôt que de se contenter de constater qu'elle « a marché ».
+- **Une mesure ne vaut que si l'on identifie correctement ce qu'elle mesure.** Attribuer les 29,21 Mo aux caches était cohérent avec le défaut constaté, mais faux. Seule la contre-épreuve, en montrant un volume inchangé après correction, a permis de le détecter.
+
+![Contre-épreuve après correction](images/etape5-contre-epreuve.png)
 
 ---
 
@@ -1303,7 +1331,7 @@ Tableau de validation renseigné au fur et à mesure du TP. Un contrôle n'est d
 | 8 | Analyse planifiée | *Timer* actif et prochaine exécution affichée | **Conforme** — dimanche 15 novembre 2026 à 02:00 CET | `etape5-timer-actif.png` |
 | 8 bis | Exécution de l'analyse | Détection et mise en quarantaine | **Conforme** — 73 fichiers analysés, `eicar.txt.001` en quarantaine | `etape5-resultat-scan.png` |
 | 8 ter | Déclenchement automatique | Le service démarre seul à l'échéance | **Conforme** — démarré à 10:49:05 sans intervention, 2 menaces traitées | `etape5-declenchement-auto.png` |
-| 8 quater | Exclusion des caches | Les répertoires de cache ne sont pas analysés | **Non conforme à la découverte** — séquence d'échappement ignorée par systemd ; corrigé en 6.8 | `etape5-declenchement-auto.png` |
+| 8 quater | Exclusion des caches | Expression régulière transmise sans altération | **Corrigé** — séquence d'échappement ignorée par systemd, défaut levé et avertissement disparu | `etape5-contre-epreuve.png` |
 | 9 | Interface graphique | ClamUI lancé, état du moteur et des signatures affiché | **Conforme** — version et base identiques aux relevés en ligne de commande | `etape6-clamui-composants.png` |
 | 9 bis | Audit de sécurité | Diagnostic du poste affiché | **Conforme** — 0 problème, 3 avertissements sur le pare-feu | `etape6-clamui-audit.png` |
 | 9 ter | Absence d'écoute réseau | Aucun port associé au démon | **Conforme** — confirme le contrôle 4 bis par un second moyen | `etape6-clamui-reseau.png` |
@@ -1352,7 +1380,7 @@ Ces limites ne sont pas reprises d'une documentation : chacune a été constaté
 4. **La limite `OnAccessMaxFileSize 5M`** exclut de l'analyse en temps réel tout fichier dépassant 5 Mio. C'est précisément ce qui rend l'analyse planifiée indispensable et non redondante.
 5. **Le périmètre du temps réel est restreint** à un seul répertoire. Le dossier personnel du compte du domaine n'est couvert que par l'analyse hebdomadaire, donc avec un délai pouvant atteindre sept jours.
 6. **`clamscan` ne journalise rien sans l'option `--log`.** Une détection faite en ligne de commande disparaît avec le terminal. C'est une erreur facile à commettre en écrivant une tâche planifiée.
-6 bis. **Systemd interprète les séquences d'échappement des lignes `ExecStart`.** Une expression régulière contenant `\.` est transmise altérée au programme, ce qui a rendu inopérante l'exclusion des caches pendant deux exécutions sans qu'aucun message d'erreur n'apparaisse dans la sortie de `clamscan`. Défaut corrigé en 6.8.
+6 bis. **Systemd interprète les séquences d'échappement des lignes `ExecStart`.** Une expression régulière contenant `\.` est transmise altérée au programme, ce qui a rendu inopérante l'exclusion des caches sans qu'aucun message n'apparaisse dans la sortie de `clamscan`. Défaut constaté dans le journal de systemd, corrigé et vérifié en 6.8.
 7. **Deux quarantaines coexistent sans se voir.** Démontré en 7.7 : l'interface n'affiche pas les détections des services automatiques, et réciproquement. C'est la limite la plus pénalisante en exploitation réelle.
 
 **Limites du poste au-delà de l'antivirus**
@@ -1382,7 +1410,11 @@ Ce TP porte sur un poste. Trois prolongements s'inscrivent naturellement dans la
 
 L'objectif du TP est atteint : le poste Debian de l'infrastructure JCorp dispose d'un antivirus fonctionnel, à jour, exploitable en ligne de commande comme depuis une interface graphique, avec une protection en temps réel et une analyse hebdomadaire planifiée. Les dix-neuf contrôles de la recette sont conformes, à l'exception d'un seul, dont l'écart a été démontré et expliqué.
 
-Au-delà de l'installation, ce travail aura surtout mis en évidence que les résultats affichés par un outil de sécurité demandent à être interprétés. Un service marqué `1/FAILURE` qui est en réalité un succès, un tableau de bord annonçant un système « protégé » après avoir analysé zéro fichier, une quarantaine affichée comme vide alors que deux fichiers y attendent : dans les trois cas, l'affichage était exact mais sa lecture naïve aurait été fausse. Savoir où regarder et quoi recouper importe autant que savoir installer.
+Au-delà de l'installation, ce travail aura surtout mis en évidence que les résultats affichés par un outil de sécurité demandent à être interprétés. Un service marqué `1/FAILURE` qui est en réalité un succès, un tableau de bord annonçant un système « protégé » après avoir analysé zéro fichier, une quarantaine affichée comme vide alors que deux fichiers y attendent, une exclusion silencieusement ignorée que seul le journal de systemd signalait : dans tous les cas, l'affichage était exact mais sa lecture naïve aurait été fausse.
+
+La dernière anomalie aura même fourni une leçon supplémentaire. Après avoir constaté que l'exclusion des caches ne s'appliquait pas, j'ai attribué à ce défaut une augmentation du volume analysé. L'explication était cohérente, et pourtant fausse : la contre-épreuve menée après correction a montré un volume inchangé, et l'origine réelle s'est révélée être les paquets d'installation de ClamUI déposés entre-temps dans l'arborescence. Un raisonnement qui tient debout n'est pas une preuve, et seule la vérification permet de les distinguer.
+
+Savoir où regarder, quoi recouper et quand remettre en cause sa propre interprétation importe donc autant que savoir installer.
 
 ---
 

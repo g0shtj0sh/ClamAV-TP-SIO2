@@ -44,6 +44,8 @@ Les captures de ce TP sont déposées dans ce dossier et appelées depuis [le ra
 | `etape5-surcharge-test.png` | Surcharge temporaire ajoutant une échéance de test | **Produite** |
 | `etape5-declenchement-auto.png` | Déclenchement automatique et avertissement systemd | **Produite** |
 | `etape5-retour-planification.png` | Retrait de la surcharge, planification restaurée | **Produite** |
+| `etape5-correction-exclusion.png` | Correction de l'expression régulière d'exclusion | **Produite** |
+| `etape5-contre-epreuve.png` | Contre-épreuve, avertissement disparu et volume inchangé | **Produite** |
 | `etape6-telechargement.png` | Récupération des deux paquets et du fichier d'empreintes | **Produite** |
 | `etape6-verification-integrite.png` | Contrôle des empreintes SHA-256 | **Produite** |
 | `etape6-installation.png` | Installation par APT des paquets locaux | **Produite** |
