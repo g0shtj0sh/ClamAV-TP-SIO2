@@ -7,7 +7,7 @@ Ce dépôt est volontairement séparé de celui de l'infrastructure : [**JCorp-S
 | Document | Contenu | État |
 | --- | --- | --- |
 | [Rapport du TP](Rapport-TP-ClamAV.md) | Déroulé complet, commandes, résultats observés et captures | **Terminé** |
-| [Guide des captures](images/README.md) | Nomenclature des images | **Complet**, 44 captures |
+| [Guide des captures](images/README.md) | Nomenclature des images | **Complet**, 51 captures |
 
 ## Contexte
 
@@ -54,7 +54,7 @@ ClamAV est ici utilisé comme **une** brique de sécurité, pas comme une protec
 
 Aucune case n'est cochée avant que le contrôle correspondant ait été exécuté et sa preuve enregistrée.
 
-**TP terminé le 12 novembre 2026.** Les quatre mécanismes de protection sont en service sur la VM 702 : analyse à la demande, protection en temps réel, analyse hebdomadaire planifiée et interface graphique. Les limites rencontrées et les prolongements envisagés sont traités au chapitre 9 du rapport.
+**TP terminé le 12 novembre 2026.** La configuration a ensuite été éprouvée par l'application des 70 mises à jour en attente, dont le chapitre 9 du rapport rend compte. Les quatre mécanismes de protection sont en service sur la VM 702 : analyse à la demande, protection en temps réel, analyse hebdomadaire planifiée et interface graphique. Les limites rencontrées et les prolongements envisagés sont traités au chapitre 9 du rapport.
 
 ## Sources
 

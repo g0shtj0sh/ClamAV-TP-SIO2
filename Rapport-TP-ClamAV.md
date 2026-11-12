@@ -17,7 +17,8 @@
 6. [Étape 5 — Analyse planifiée](#6-étape-5--analyse-planifiée)
 7. [Étape 6 — Interface graphique ClamUI](#7-étape-6--interface-graphique-clamui)
 8. [Étape 7 — Recette](#8-étape-7--recette)
-9. [Limites et conclusion](#9-limites-et-conclusion)
+9. [Maintenance et persistance de la configuration](#9-maintenance-et-persistance-de-la-configuration)
+10. [Limites et conclusion](#10-limites-et-conclusion)
 
 ---
 
@@ -928,6 +929,8 @@ Aucune commande n'a été lancée à 10:49. Le journal de systemd restitue l'int
 
 La colonne `LAST` de la liste des minuteries, jusque-là vide, est désormais renseignée avec l'horodatage du 12 novembre 2026 à 10:49:05. Les deux fichiers de test ont été détectés et déplacés en quarantaine, et le service s'est arrêté proprement.
 
+Le second fichier détecté, `test-clamui.txt`, est celui qui avait été mis en quarantaine par l'interface à 10:38 en 7.7. Il était de nouveau présent dans `~/Documents` au moment de l'analyse ; l'opération l'ayant remis à cet emplacement n'a pas été consignée au cours du TP. Cette réapparition ne remet pas en cause le constat de 7.7, établi par comparaison des deux espaces de quarantaine immédiatement après la mise en quarantaine par l'interface.
+
 **La chaîne complète est donc vérifiée :** le timer déclenche le service, le service analyse, détecte, met en quarantaine, journalise et se termine, sans qu'aucun opérateur n'intervienne. C'est le point qui manquait à la recette.
 
 ![Déclenchement automatique du timer](images/etape5-declenchement-auto.png)
@@ -1340,9 +1343,54 @@ Tableau de validation renseigné au fur et à mesure du TP. Un contrôle n'est d
 
 ---
 
-## 9. Limites et conclusion
+## 9. Maintenance et persistance de la configuration
 
-### 9.1 Ce qui a été mis en place
+Une installation qui fonctionne le jour de sa mise en place ne prouve pas grand-chose. Ce qui compte en exploitation, c'est qu'elle survive aux évolutions du système. Le poste comptait 70 paquets en attente de mise à jour, signalés dès le premier `apt update` de l'étape 1 et volontairement laissés de côté pendant le TP pour ne pas mêler leurs effets à ceux de l'installation. Ils ont été appliqués une fois la recette terminée.
+
+### 9.1 Risque identifié avant l'opération
+
+Le fichier `/etc/clamav/clamd.conf` a été modifié manuellement à l'étape 4 pour y ajouter les directives de l'analyse en temps réel. Lorsqu'un paquet fournit une nouvelle version d'un fichier de configuration que l'administrateur a édité, APT demande quoi faire : conserver la version locale ou la remplacer.
+
+Accepter la version du mainteneur aurait effacé les quatre directives `OnAccess*`, et **la protection en temps réel aurait cessé de fonctionner au redémarrage suivant du démon, sans message d'erreur**. La consigne retenue était donc de conserver systématiquement la version locale.
+
+### 9.2 Contrôles après mise à jour
+
+```bash
+systemctl is-active clamav-daemon clamav-freshclam clamonacc
+tail -6 /etc/clamav/clamd.conf
+clamscan --version
+systemctl list-timers scan-home-hebdo.timer --no-pager
+free -h
+```
+
+| Contrôle | Résultat attendu | Résultat observé | Conforme |
+| --- | --- | --- | --- |
+| Services ClamAV | Les trois `active` | `active` pour `clamav-daemon`, `clamav-freshclam` et `clamonacc` | Oui |
+| Directives de temps réel | Les quatre `OnAccess*` préservées | Bloc ajouté à l'étape 4 intact dans `clamd.conf` | Oui |
+| Version du moteur | Inchangée ou supérieure | `ClamAV 1.4.3/28181/Thu Nov 12 07:27:14 2026` | Oui |
+| Planification | Timer toujours armé | Prochaine exécution dimanche 15 novembre à 02:00 | Oui |
+| Historique du timer | Dernière exécution conservée | 12 novembre, 11 min avant le contrôle | Oui |
+| Mémoire | Marge suffisante maintenue | 2,5 Gio utilisés, **2,3 Gio disponibles** | Oui |
+
+La configuration a donc survécu à l'application des 70 mises à jour. La version du moteur reste la 1.4.3 : Debian n'a pas rétroporté de version plus récente de ClamAV dans cette mise à jour, ce qui est cohérent avec la politique de gel des versions analysée à l'étape 1.
+
+![Services, planification et mémoire après mise à jour](images/etape7-persistance-maj.png)
+
+![Configuration de temps réel préservée](images/etape7-configuration-preservee.png)
+
+### 9.3 Ce que ce contrôle apporte
+
+Trois enseignements méritent d'être retenus de cette opération de maintenance.
+
+1. **Une modification manuelle d'un fichier de configuration est un point de fragilité.** Elle survit à cette mise à jour, mais rien ne garantit qu'elle survivra à la suivante, et la perte serait silencieuse. Sur un parc, la bonne pratique consisterait à déposer les directives dans un fichier de configuration distinct lorsque l'application le permet, ou à redéployer la configuration par un script après chaque mise à jour majeure.
+2. **La marge mémoire reste confortable.** Avec 2,3 Gio disponibles alors que le démon est chargé, le dimensionnement retenu à l'étape 2 tient après mise à jour.
+3. **L'historique du timer est conservé.** La colonne `LAST` affiche toujours l'exécution de 10:49, ce qui confirme que systemd conserve cet état indépendamment des mises à jour du système.
+
+---
+
+## 10. Limites et conclusion
+
+### 10.1 Ce qui a été mis en place
 
 Le poste Debian de l'infrastructure JCorp dispose à l'issue de ce TP de quatre mécanismes complémentaires, chacun validé par un test de détection.
 
@@ -1365,7 +1413,7 @@ Quelques valeurs mesurées qui caractérisent cette installation :
 | Écart de performance `clamscan` / `clamdscan` | 17,955 s contre 0,045 s |
 | Délai de détection en temps réel | immédiat |
 
-### 9.2 Limites relevées au cours du TP
+### 10.2 Limites relevées au cours du TP
 
 Ces limites ne sont pas reprises d'une documentation : chacune a été constatée sur la machine.
 
@@ -1388,17 +1436,17 @@ Ces limites ne sont pas reprises d'une documentation : chacune a été constaté
 8. **Aucun pare-feu local n'est configuré**, comme l'a relevé l'audit de ClamUI. Le filtrage repose uniquement sur le pare-feu de la carte réseau au niveau de Proxmox.
 9. **La socket du démon est accessible à tout utilisateur local** (`LocalSocketMode 666`). Réglage par défaut adapté à un poste de travail, mais à resserrer sur un serveur.
 
-### 9.3 Ce qui n'a pas été vérifié
+### 10.3 Ce qui n'a pas été vérifié
 
 Par honnêteté sur la portée de ce travail :
 
 - Aucun test n'a été mené avec un **logiciel malveillant réel**, ni avec un fichier dépassant la limite de 5 Mio qui aurait confirmé expérimentalement cette limite.
-- Le comportement après un **redémarrage complet** du poste n'a pas été contrôlé, bien que les trois services soient déclarés `enabled`.
+- Le comportement après un **redémarrage complet** du poste n'a pas été contrôlé, bien que les trois services soient déclarés `enabled`. La persistance après l'application de 70 mises à jour a en revanche été vérifiée au chapitre 9.
 - Aucun test de **faux positif** n'a été conduit sur des fichiers légitimes volumineux ou inhabituels.
 
 Le déclenchement automatique du timer, initialement absent de cette liste de vérifications, a été contrôlé a posteriori en 6.7 au moyen d'une échéance de test.
 
-### 9.4 Prolongements pour le projet JCorp
+### 10.4 Prolongements pour le projet JCorp
 
 Ce TP porte sur un poste. Trois prolongements s'inscrivent naturellement dans la suite du projet.
 
@@ -1406,7 +1454,7 @@ Ce TP porte sur un poste. Trois prolongements s'inscrivent naturellement dans la
 2. **Industrialiser le déploiement.** La procédure décrite ici est manuelle. L'appliquer à l'ensemble du parc Linux supposerait de la scripter, à l'image des scripts PowerShell déjà utilisés pour l'Active Directory dans le dépôt d'infrastructure.
 3. **Durcir le poste.** L'audit a mis en évidence l'absence de pare-feu local. L'antivirus ne couvre qu'un seul vecteur ; ClamAV reste une brique parmi d'autres, aux côtés du filtrage réseau, du durcissement du système, du contrôle des accès et de la sensibilisation des utilisateurs.
 
-### 9.5 Conclusion
+### 10.5 Conclusion
 
 L'objectif du TP est atteint : le poste Debian de l'infrastructure JCorp dispose d'un antivirus fonctionnel, à jour, exploitable en ligne de commande comme depuis une interface graphique, avec une protection en temps réel et une analyse hebdomadaire planifiée. Les dix-neuf contrôles de la recette sont conformes, à l'exception d'un seul, dont l'écart a été démontré et expliqué.
 

@@ -62,6 +62,8 @@ Les captures de ce TP sont déposées dans ce dossier et appelées depuis [le ra
 | `etape6-clamui-resultats.png` | Détail de la menace et actions proposées | **Produite** |
 | `etape6-clamui-quarantaine-remplie.png` | Quarantaine de l'interface après mise en quarantaine | **Produite** |
 | `etape6-deux-quarantaines.png` | Comparaison des deux espaces de quarantaine | **Produite** |
+| `etape7-persistance-maj.png` | Services, planification et mémoire après mise à jour | **Produite** |
+| `etape7-configuration-preservee.png` | Directives de temps réel préservées | **Produite** |
 
 Ce tableau est mis à jour au fur et à mesure : une ligne passe à « Produite » seulement quand le fichier est présent dans ce dossier.
 
