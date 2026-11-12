@@ -877,6 +877,117 @@ Une optimisation est possible : utiliser `clamdscan --fdpass` à la place de `cl
 
 La couverture du dossier personnel du compte du domaine est assurée par le périmètre `/home`, ce qui comble la limite relevée en 5.8.
 
+### 6.7 Vérification du déclenchement automatique
+
+Le contrôle réalisé en 6.5 portait sur une exécution **manuelle** du service. Il ne prouvait donc pas que la planification fonctionne, seulement que la tâche s'exécute correctement lorsqu'on la lance. Pour lever ce doute sans attendre le dimanche suivant, une échéance de test a été ajoutée.
+
+#### Ajout d'une surcharge temporaire
+
+Plutôt que de modifier l'unité d'origine, j'utilise un fichier de **surcharge** (*drop-in*), mécanisme prévu par systemd pour adapter une unité sans la réécrire.
+
+```bash
+sudo mkdir -p /etc/systemd/system/scan-home-hebdo.timer.d
+sudo tee /etc/systemd/system/scan-home-hebdo.timer.d/test-ponctuel.conf > /dev/null <<'EOF'
+[Timer]
+OnCalendar=*-*-* 10:49:00
+EOF
+sudo systemctl daemon-reload && systemctl list-timers scan-home-hebdo.timer --no-pager
+```
+
+La directive `OnCalendar` placée dans une surcharge **s'ajoute** à celle de l'unité au lieu de la remplacer. Le timer possède donc temporairement deux échéances, et la liste affiche la plus proche : aujourd'hui à 10:49, dans 1 min 7 s.
+
+Un fichier de test a été déposé au préalable dans `~/Documents`.
+
+![Surcharge temporaire du timer](images/etape5-surcharge-test.png)
+
+#### Constat du déclenchement
+
+Aucune commande n'a été lancée à 10:49. Le journal de systemd restitue l'intégralité de la séquence :
+
+```
+10:49:05 systemd[1]: Starting scan-home-hebdo.service - Scan ClamAV hebdomadaire de /home...
+10:49:23 clamscan[9496]: .../test-clamui.txt: Eicar-Test-Signature FOUND
+10:49:23 clamscan[9496]: .../test-clamui.txt: moved to '/var/quarantine/test-clamui.txt'
+10:49:23 clamscan[9496]: .../eicar-timer.txt: Eicar-Test-Signature FOUND
+10:49:23 clamscan[9496]: .../eicar-timer.txt: moved to '/var/quarantine/eicar-timer.txt'
+10:49:26 systemd[1]: scan-home-hebdo.service: Deactivated successfully.
+10:49:26 systemd[1]: Finished scan-home-hebdo.service - Scan ClamAV hebdomadaire de /home.
+10:49:26 systemd[1]: scan-home-hebdo.service: Consumed 20.826s CPU time, 986.2M memory peak.
+```
+
+| Indicateur | Valeur |
+| --- | --- |
+| Heure de déclenchement | 10:49:05, sans intervention |
+| Durée totale | 21 s |
+| Répertoires analysés | 129 |
+| Fichiers analysés | 99 |
+| Fichiers infectés | **2** |
+| Données analysées | 29,21 Mo |
+| Temps processeur consommé | 20,8 s |
+| Pic mémoire | 986,2 Mio |
+
+La colonne `LAST` de la liste des minuteries, jusque-là vide, est désormais renseignée avec l'horodatage du 12 novembre 2026 à 10:49:05. Les deux fichiers de test ont été détectés et déplacés en quarantaine, et le service s'est arrêté proprement.
+
+**La chaîne complète est donc vérifiée :** le timer déclenche le service, le service analyse, détecte, met en quarantaine, journalise et se termine, sans qu'aucun opérateur n'intervienne. C'est le point qui manquait à la recette.
+
+![Déclenchement automatique du timer](images/etape5-declenchement-auto.png)
+
+#### Retrait de la surcharge
+
+La surcharge est supprimée immédiatement après le constat : la conserver ferait analyser `/home` tous les jours à 10:49, ce qui n'est pas la planification retenue.
+
+```bash
+sudo rm /etc/systemd/system/scan-home-hebdo.timer.d/test-ponctuel.conf
+sudo rmdir /etc/systemd/system/scan-home-hebdo.timer.d
+sudo systemctl daemon-reload && systemctl list-timers scan-home-hebdo.timer --no-pager
+```
+
+**Résultat observé :** la prochaine échéance redevient `Sun 2026-11-15 02:00:00 CET`, et la colonne `LAST` conserve la trace de l'exécution de 10:49:05. La planification d'origine est restaurée sans que l'unité ait jamais été modifiée.
+
+![Retour à la planification hebdomadaire](images/etape5-retour-planification.png)
+
+### 6.8 Anomalie détectée : l'exclusion des caches ne fonctionnait pas
+
+Le journal de ce déclenchement contient un avertissement émis par systemd lors du chargement de l'unité :
+
+```
+/etc/systemd/system/scan-home-hebdo.service:10: Ignoring unknown escape sequences:
+"--exclude-dir=^/home/[^/]+/\.cache"
+```
+
+#### Analyse
+
+Systemd interprète lui-même les séquences d'échappement dans les lignes `ExecStart` avant de transmettre les arguments au programme. La séquence `\.` n'ayant aucune signification pour lui, il l'ignore — et transmet donc à `clamscan` une expression régulière différente de celle écrite. **L'exclusion des répertoires de cache ne s'appliquait pas.**
+
+Les chiffres le confirment. En comparant les deux exécutions du même service sur la même machine :
+
+| Exécution | Répertoires | Fichiers | Données analysées |
+| --- | --- | --- | --- |
+| Manuelle, 10:18 | 112 | 73 | 0,27 Mo |
+| Automatique, 10:49 | 129 | 99 | **29,21 Mo** |
+
+L'écart de volume ne s'explique pas par les deux fichiers de test de 68 octets : ce sont bien les données de cache, accumulées entre-temps par l'installation et l'utilisation de ClamUI, qui ont été analysées alors qu'elles auraient dû être écartées.
+
+#### Portée du défaut
+
+Il faut mesurer ce que cette anomalie affecte, et ce qu'elle n'affecte pas :
+
+- **La détection n'est pas compromise.** Analyser davantage de fichiers que prévu ne fait manquer aucune menace ; au contraire, le périmètre couvert est plus large.
+- **C'est la performance qui est touchée.** Les caches sont volumineux, changent sans cesse et ne présentent pas d'intérêt pour une analyse antivirale. Sur un poste réellement utilisé, où ils peuvent atteindre plusieurs gigaoctets, la durée du scan hebdomadaire s'en trouverait fortement allongée.
+- **Le défaut était silencieux.** Rien dans la sortie de `clamscan` ne signale qu'une exclusion a été ignorée. Seul le journal de systemd, consulté pour une tout autre raison, a permis de le découvrir. C'est un argument concret en faveur de la lecture des journaux après la mise en place d'une tâche planifiée, plutôt que de se contenter de constater qu'elle « a marché ».
+
+#### Correction
+
+La solution consiste à retirer la barre oblique inverse de l'expression régulière. La classe de caractères `[.]` a exactement la même signification que `\.` pour `clamscan`, sans poser de problème d'interprétation à systemd.
+
+```bash
+sudo sed -i 's|--exclude-dir="\^/home/\[\^/\]+/\\.cache"|--exclude-dir=^/home/[^/]+/[.]cache|' /etc/systemd/system/scan-home-hebdo.service
+sudo systemctl daemon-reload
+grep ExecStart /etc/systemd/system/scan-home-hebdo.service
+```
+
+_Résultat de la correction et contre-épreuve à consigner._
+
 ---
 
 ## 7. Étape 6 — Interface graphique ClamUI
@@ -1191,6 +1302,8 @@ Tableau de validation renseigné au fur et à mesure du TP. Un contrôle n'est d
 | 7 | Journalisation | Détection tracée dans le journal correspondant | **Conforme** — empreinte MD5 et taille dans `clamav.log` ; `clamscan` ne journalise pas sans `--log` | `etape3-suppression-journal.png` |
 | 8 | Analyse planifiée | *Timer* actif et prochaine exécution affichée | **Conforme** — dimanche 15 novembre 2026 à 02:00 CET | `etape5-timer-actif.png` |
 | 8 bis | Exécution de l'analyse | Détection et mise en quarantaine | **Conforme** — 73 fichiers analysés, `eicar.txt.001` en quarantaine | `etape5-resultat-scan.png` |
+| 8 ter | Déclenchement automatique | Le service démarre seul à l'échéance | **Conforme** — démarré à 10:49:05 sans intervention, 2 menaces traitées | `etape5-declenchement-auto.png` |
+| 8 quater | Exclusion des caches | Les répertoires de cache ne sont pas analysés | **Non conforme à la découverte** — séquence d'échappement ignorée par systemd ; corrigé en 6.8 | `etape5-declenchement-auto.png` |
 | 9 | Interface graphique | ClamUI lancé, état du moteur et des signatures affiché | **Conforme** — version et base identiques aux relevés en ligne de commande | `etape6-clamui-composants.png` |
 | 9 bis | Audit de sécurité | Diagnostic du poste affiché | **Conforme** — 0 problème, 3 avertissements sur le pare-feu | `etape6-clamui-audit.png` |
 | 9 ter | Absence d'écoute réseau | Aucun port associé au démon | **Conforme** — confirme le contrôle 4 bis par un second moyen | `etape6-clamui-reseau.png` |
@@ -1239,6 +1352,7 @@ Ces limites ne sont pas reprises d'une documentation : chacune a été constaté
 4. **La limite `OnAccessMaxFileSize 5M`** exclut de l'analyse en temps réel tout fichier dépassant 5 Mio. C'est précisément ce qui rend l'analyse planifiée indispensable et non redondante.
 5. **Le périmètre du temps réel est restreint** à un seul répertoire. Le dossier personnel du compte du domaine n'est couvert que par l'analyse hebdomadaire, donc avec un délai pouvant atteindre sept jours.
 6. **`clamscan` ne journalise rien sans l'option `--log`.** Une détection faite en ligne de commande disparaît avec le terminal. C'est une erreur facile à commettre en écrivant une tâche planifiée.
+6 bis. **Systemd interprète les séquences d'échappement des lignes `ExecStart`.** Une expression régulière contenant `\.` est transmise altérée au programme, ce qui a rendu inopérante l'exclusion des caches pendant deux exécutions sans qu'aucun message d'erreur n'apparaisse dans la sortie de `clamscan`. Défaut corrigé en 6.8.
 7. **Deux quarantaines coexistent sans se voir.** Démontré en 7.7 : l'interface n'affiche pas les détections des services automatiques, et réciproquement. C'est la limite la plus pénalisante en exploitation réelle.
 
 **Limites du poste au-delà de l'antivirus**
@@ -1250,10 +1364,11 @@ Ces limites ne sont pas reprises d'une documentation : chacune a été constaté
 
 Par honnêteté sur la portée de ce travail :
 
-- Le déclenchement automatique du timer **n'a pas été observé** : seule une exécution manuelle du service a été réalisée. La première exécution planifiée aura lieu le dimanche 15 novembre 2026.
 - Aucun test n'a été mené avec un **logiciel malveillant réel**, ni avec un fichier dépassant la limite de 5 Mio qui aurait confirmé expérimentalement cette limite.
 - Le comportement après un **redémarrage complet** du poste n'a pas été contrôlé, bien que les trois services soient déclarés `enabled`.
 - Aucun test de **faux positif** n'a été conduit sur des fichiers légitimes volumineux ou inhabituels.
+
+Le déclenchement automatique du timer, initialement absent de cette liste de vérifications, a été contrôlé a posteriori en 6.7 au moyen d'une échéance de test.
 
 ### 9.4 Prolongements pour le projet JCorp
 

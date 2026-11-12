@@ -41,6 +41,9 @@ Les captures de ce TP sont déposées dans ce dossier et appelées depuis [le ra
 | `etape5-timer-actif.png` | `systemctl list-timers` avec la prochaine exécution | **Produite** |
 | `etape5-fichier-test.png` | Création du fichier de test hors du répertoire surveillé | **Produite** |
 | `etape5-resultat-scan.png` | Statut du service, journal dédié et quarantaine | **Produite** |
+| `etape5-surcharge-test.png` | Surcharge temporaire ajoutant une échéance de test | **Produite** |
+| `etape5-declenchement-auto.png` | Déclenchement automatique et avertissement systemd | **Produite** |
+| `etape5-retour-planification.png` | Retrait de la surcharge, planification restaurée | **Produite** |
 | `etape6-telechargement.png` | Récupération des deux paquets et du fichier d'empreintes | **Produite** |
 | `etape6-verification-integrite.png` | Contrôle des empreintes SHA-256 | **Produite** |
 | `etape6-installation.png` | Installation par APT des paquets locaux | **Produite** |
