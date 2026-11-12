@@ -708,7 +708,169 @@ Ces trois points expliquent pourquoi l'analyse à l'accès ne remplace pas l'ana
 
 ## 6. Étape 5 — Analyse planifiée
 
-_Section à compléter._
+### 6.1 Objectif et justification
+
+L'analyse à l'accès de l'étape 4 réagit immédiatement, mais sur un périmètre restreint et avec une limite de taille de 5 Mio. L'analyse planifiée vient combler ces deux manques : elle balaye l'ensemble de `/home`, **y compris le dossier du compte du domaine** qui n'était pas surveillé, et n'applique aucune limite de taille.
+
+Les deux mécanismes sont donc complémentaires et non redondants.
+
+| | Temps réel (étape 4) | Planifié (étape 5) |
+| --- | --- | --- |
+| Déclenchement | Écriture d'un fichier | Horaire défini |
+| Périmètre | Un répertoire | Tout `/home` |
+| Limite de taille | 5 Mio | Aucune |
+| Délai de détection | Immédiat | Jusqu'à une semaine |
+| Outil | `clamonacc` + `clamd` | `clamscan` |
+
+La planification repose sur un couple **service / timer** systemd plutôt que sur `cron` : le fichier `.service` définit **ce qui** doit être exécuté, le fichier `.timer` définit **quand**, et systemd assure le déclenchement. Cette séparation permet de lancer l'analyse à la demande sans toucher à sa planification, ce dont je me sers pour la tester en 6.5.
+
+### 6.2 Création du service
+
+```bash
+sudo tee /etc/systemd/system/scan-home-hebdo.service > /dev/null <<'EOF'
+[Unit]
+Description=Scan ClamAV hebdomadaire de /home
+Requires=clamav-daemon.service
+After=clamav-daemon.service
+
+[Service]
+Type=oneshot
+Nice=19
+IOSchedulingClass=idle
+ExecStart=/usr/bin/clamscan --recursive --infected --move=/var/quarantine --log=/var/log/clamav/scan-home-hebdo.log --exclude-dir="^/home/[^/]+/\.cache" /home
+SuccessExitStatus=1
+EOF
+```
+
+| Élément | Rôle |
+| --- | --- |
+| `Type=oneshot` | Tâche qui s'exécute puis se termine, par opposition à un service résident |
+| `Nice=19` | Priorité processeur la plus basse |
+| `IOSchedulingClass=idle` | Priorité disque la plus basse |
+| `--log` | Journal dédié, **indispensable** : l'étape 3 a montré que `clamscan` ne trace rien sans cette option |
+| `--move` | Quarantaine plutôt que suppression, par cohérence avec l'étape 4 |
+| `--exclude-dir` | Exclut les répertoires de cache des utilisateurs |
+| `SuccessExitStatus=1` | Voir l'explication en 6.5 |
+
+Les réglages de priorité méritent d'être justifiés : l'analyse étant programmée à 2 h du matin, la machine peut être en train d'exécuter d'autres traitements. Ces deux directives garantissent que le scan cède le processeur et le disque à toute autre activité plutôt que de ralentir le système.
+
+![Création du service d'analyse planifiée](images/etape5-service.png)
+
+### 6.3 Création du timer
+
+```bash
+sudo tee /etc/systemd/system/scan-home-hebdo.timer > /dev/null <<'EOF'
+[Unit]
+Description=Lancer le scan ClamAV de /home chaque semaine
+
+[Timer]
+OnCalendar=Sun *-*-* 02:00:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+EOF
+```
+
+`OnCalendar=Sun *-*-* 02:00:00` signifie « chaque dimanche à 2 h 00 ». `Persistent=true` rattrape l'exécution au démarrage suivant si la machine était éteinte à l'heure prévue. Cette dernière directive est particulièrement pertinente ici : la VM 702 est un poste de travail, qui n'a aucune raison d'être allumé un dimanche à 2 h du matin. Sans elle, l'analyse ne serait tout simplement jamais exécutée.
+
+![Création du timer](images/etape5-timer.png)
+
+### 6.4 Contrôle de la planification
+
+La syntaxe calendaire de systemd est vérifiable avant activation, ce qui évite de découvrir une erreur de planification des semaines plus tard.
+
+```bash
+systemd-analyze calendar "Sun *-*-* 02:00:00"
+sudo systemctl daemon-reload && sudo systemctl enable --now scan-home-hebdo.timer && systemctl list-timers scan-home-hebdo.timer --no-pager
+```
+
+**Résultat observé :**
+
+| Information | Valeur |
+| --- | --- |
+| Forme normalisée | `Sun *-*-* 02:00:00` |
+| Prochaine exécution | dimanche 15 novembre 2026 à 02:00:00 CET |
+| Équivalent UTC | dimanche 15 novembre 2026 à 01:00:00 |
+| Délai | 2 jours |
+
+Le timer apparaît ensuite dans la liste des minuteries actives, avec la colonne `LAST` et `PASSED` vides puisqu'il n'a encore jamais été déclenché, et la colonne `ACTIVATES` pointant vers `scan-home-hebdo.service`.
+
+L'affichage conjoint de l'heure locale et de l'heure UTC n'est pas anecdotique : il confirme que systemd tient compte du fuseau horaire de la machine. Sur un poste joint au domaine et synchronisé par NTP, comme contrôlé à l'étape 1, la planification correspond donc bien à l'heure réelle attendue.
+
+![Vérification de la syntaxe calendaire](images/etape5-calendrier.png)
+
+![Timer actif et prochaine exécution](images/etape5-timer-actif.png)
+
+### 6.5 Test de l'analyse
+
+Pour éprouver le mécanisme sans attendre dimanche, le service est lancé manuellement. Le fichier de test est placé dans `~/Documents` et **non** dans `~/Téléchargements` : ce dernier étant surveillé en temps réel depuis l'étape 4, le fichier aurait été mis en quarantaine instantanément et l'analyse planifiée n'aurait rien eu à détecter. C'est ici le mécanisme planifié que l'on vérifie, pas le temps réel.
+
+```bash
+mkdir -p ~/Documents && printf '%s%s' 'X5O!P%@AP[4\PZX54(P^)7CC)7}$EICAR-ST' 'ANDARD-ANTIVIRUS-TEST-FILE!$H+H*' > ~/Documents/eicar.txt && ls -l ~/Documents/
+sudo systemctl start scan-home-hebdo.service
+systemctl status scan-home-hebdo.service --no-pager ; sudo tail -n 20 /var/log/clamav/scan-home-hebdo.log ; ls -l ~/Documents/ ; sudo ls -l /var/quarantine/
+```
+
+**Résultat observé dans le journal dédié :**
+
+```
+/home/administrateur/Documents/eicar.txt: Eicar-Test-Signature FOUND
+/home/administrateur/Documents/eicar.txt: moved to '/var/quarantine/eicar.txt.001'
+```
+
+| Indicateur du résumé | Valeur |
+| --- | --- |
+| Répertoires analysés | 112 |
+| Fichiers analysés | 73 |
+| Fichiers infectés | 1 |
+| Données analysées | 0,27 Mo |
+| Durée | 17,5 s |
+
+Le fichier détecté a été renommé en `eicar.txt.001` lors du déplacement, le nom `eicar.txt` étant déjà occupé dans la quarantaine depuis l'étape 4. Ce n'est pas une anomalie mais le comportement normal de `--move`, et c'est un comportement souhaitable : il évite qu'une détection en écrase une précédente et préserve l'historique des éléments mis à l'écart.
+
+| Répertoire | Contenu final |
+| --- | --- |
+| `~/Documents/` | **vide** |
+| `/var/quarantine/` | `eicar.txt` (10:13, étape 4) et `eicar.txt.001` (10:17, étape 5) |
+
+#### Observation : `status=1/FAILURE` n'est pas un échec
+
+La sortie de `systemctl status` affiche une ligne qui pourrait inquiéter :
+
+```
+Process: 7113 ExecStart=/usr/bin/clamscan ... (code=exited, status=1/FAILURE)
+```
+
+Pourtant l'unité est bien à l'état `inactive (dead)` et non `failed`. L'explication tient à la convention de codes de retour de `clamscan` : il renvoie **0** si rien n'est trouvé, **1** si au moins un fichier est infecté, et **2** en cas d'erreur. Trouver un virus est donc, du point de vue du système, un code de sortie non nul.
+
+C'est précisément le rôle de la directive `SuccessExitStatus=1` ajoutée au service : elle indique à systemd de considérer le code 1 comme un succès. La mention `1/FAILURE` n'est que l'étiquette générique que systemd associe à tout code de sortie non nul dans le détail du processus ; le verdict de l'unité, lui, figure sur la ligne `Active`. Sans cette directive, chaque détection aurait marqué le service en échec, ce qui aurait rendu toute supervision de la tâche inexploitable — on ne saurait plus distinguer une analyse qui a trouvé quelque chose d'une analyse qui s'est mal passée.
+
+#### Observation : le coût mémoire cumulé
+
+Le service rapporte un pic mémoire de **958,3 Mio** et 17,4 s de temps processeur, ce qui correspond au chargement des signatures par `clamscan` mesuré à l'étape 3.
+
+Ce chiffre s'ajoute aux 947,4 Mio déjà occupés en permanence par le démon : pendant l'exécution de l'analyse planifiée, la machine mobilise donc près de **1,9 Gio** rien que pour l'antivirus. Sur la configuration d'origine à 2 Gio, cette seule étape aurait saturé la mémoire. La décision de dimensionnement prise à l'étape 2 trouve ici sa justification la plus nette.
+
+Une optimisation est possible : utiliser `clamdscan --fdpass` à la place de `clamscan` dans le service ferait porter l'analyse par le démon déjà chargé, supprimant ce second gigaoctet et les 17 secondes de chargement. Je conserve toutefois `clamscan` pour cette analyse planifiée, afin que la tâche reste **indépendante de l'état du démon** : si `clamd` est arrêté pour une raison quelconque, l'analyse hebdomadaire s'exécute quand même. C'est un arbitrage entre consommation et robustesse, tranché ici en faveur de la robustesse puisque l'analyse a lieu la nuit.
+
+![Résultat de l'analyse planifiée](images/etape5-resultat-scan.png)
+
+![Création du fichier de test](images/etape5-fichier-test.png)
+
+### 6.6 Contrôles de fin d'étape
+
+| Contrôle | Résultat attendu | Résultat observé | Conforme |
+| --- | --- | --- | --- |
+| Syntaxe de la planification | Date cohérente avec l'intention | Dimanche 15 novembre 2026 à 02:00 CET | Oui |
+| Timer actif | Présent dans la liste des minuteries | Actif, prochaine exécution dans 2 jours | Oui |
+| Exécution de l'analyse | Parcours de `/home` | 112 répertoires et 73 fichiers analysés | Oui |
+| Détection | Le fichier de test est signalé | `Eicar-Test-Signature FOUND` | Oui |
+| Mise en quarantaine | Déplacement sans écrasement | `eicar.txt.001` créé à côté de `eicar.txt` | Oui |
+| Journalisation dédiée | Trace dans `scan-home-hebdo.log` | Détection, déplacement et résumé complet | Oui |
+| Verdict du service | Unité non en échec malgré la détection | `inactive (dead)`, grâce à `SuccessExitStatus=1` | Oui |
+
+La couverture du dossier personnel du compte du domaine est assurée par le périmètre `/home`, ce qui comble la limite relevée en 5.8.
 
 ---
 
@@ -754,7 +916,8 @@ Tableau de validation à compléter au fur et à mesure. Un contrôle n'est déc
 | 6 | Détection en temps réel | EICAR détecté et déplacé en quarantaine dès son écriture | **Conforme** — aucune commande d'analyse lancée | `etape4-journal-tempsreel.png` |
 | 6 bis | Protection de la quarantaine | Accès réservé à `root` | **Conforme** — `drwx------ root root` | `etape4-quarantaine.png` |
 | 7 | Journalisation | Détection tracée dans le journal correspondant | **Conforme** — empreinte MD5 et taille dans `clamav.log` ; `clamscan` ne journalise pas sans `--log` | `etape3-suppression-journal.png` |
-| 8 | Analyse planifiée | *Timer* actif et prochaine exécution affichée | _à renseigner_ | _à produire_ |
+| 8 | Analyse planifiée | *Timer* actif et prochaine exécution affichée | **Conforme** — dimanche 15 novembre 2026 à 02:00 CET | `etape5-timer-actif.png` |
+| 8 bis | Exécution de l'analyse | Détection et mise en quarantaine | **Conforme** — 73 fichiers analysés, `eicar.txt.001` en quarantaine | `etape5-resultat-scan.png` |
 | 9 | Interface graphique | ClamUI lancé, état du moteur et des signatures affiché | _à renseigner_ | _à produire_ |
 | 10 | Scan depuis l'interface | Analyse déclenchée et résultat affiché dans ClamUI | _à renseigner_ | _à produire_ |
 

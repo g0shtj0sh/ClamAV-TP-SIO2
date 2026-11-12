@@ -48,7 +48,7 @@ ClamAV est ici utilisé comme **une** brique de sécurité, pas comme une protec
 - [x] Étape 2 — Démon `clamav-daemon` *(actif, 947 Mio en mémoire, socket locale sans exposition réseau)*
 - [x] Étape 3 — Test de détection EICAR *(détecté, supprimé et journalisé ; écart de 400 pour 1 entre `clamscan` et `clamdscan`)*
 - [x] Étape 4 — Protection en temps réel et quarantaine *(détection sans commande, déplacement automatique vers `/var/quarantine`)*
-- [ ] Étape 5 — Analyse planifiée
+- [x] Étape 5 — Analyse planifiée *(timer hebdomadaire actif, couvre tout `/home` sans limite de taille)*
 - [ ] Étape 6 — Interface graphique ClamUI
 - [ ] Étape 7 — Recette et conclusion
 

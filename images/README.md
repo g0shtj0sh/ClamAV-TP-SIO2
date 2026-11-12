@@ -35,7 +35,12 @@ Les captures de ce TP sont déposées dans ce dossier et appelées depuis [le ra
 | `etape4-service-clamonacc.png` | `systemctl status clamonacc` | **Produite** |
 | `etape4-detection-quarantaine.png` | Répertoire surveillé vidé et fichier en quarantaine | **Produite** |
 | `etape4-journal-tempsreel.png` | Journal `clamonacc` au moment de la détection | **Produite** |
-| `etape5-timer.png` | `systemctl list-timers` avec la prochaine exécution | À produire |
+| `etape5-service.png` | Création de l'unité `scan-home-hebdo.service` | **Produite** |
+| `etape5-timer.png` | Création de l'unité `scan-home-hebdo.timer` | **Produite** |
+| `etape5-calendrier.png` | `systemd-analyze calendar`, date normalisée | **Produite** |
+| `etape5-timer-actif.png` | `systemctl list-timers` avec la prochaine exécution | **Produite** |
+| `etape5-fichier-test.png` | Création du fichier de test hors du répertoire surveillé | **Produite** |
+| `etape5-resultat-scan.png` | Statut du service, journal dédié et quarantaine | **Produite** |
 | `etape6-clamui-accueil.png` | Tableau de bord ClamUI, état du moteur et des signatures | À produire |
 | `etape6-clamui-scan.png` | Résultat d'une analyse lancée depuis ClamUI | À produire |
 | `etape6-clamui-planification.png` | Écran de planification des analyses | À produire |
