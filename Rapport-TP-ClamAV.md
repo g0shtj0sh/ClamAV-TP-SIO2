@@ -497,7 +497,212 @@ Les lignes précédentes du journal, horodatées à 09:56:02, correspondent au d
 
 ## 5. Étape 4 — Protection en temps réel et quarantaine
 
-_Section à compléter._
+### 5.1 Objectif
+
+Jusqu'ici, une analyse ne se déclenche que si quelqu'un la demande. L'**analyse à l'accès** (*On-Access Scanning*) change de logique : le composant `clamonacc` s'appuie sur le mécanisme de surveillance de fichiers du noyau Linux pour être averti dès qu'un fichier est écrit dans un répertoire surveillé, et le soumet aussitôt au démon. Aucune commande n'est lancée par l'utilisateur.
+
+L'objectif est de surveiller un répertoire de téléchargement et de déplacer automatiquement en quarantaine tout fichier détecté.
+
+### 5.2 Vérification du composant et repérage des dossiers
+
+```bash
+clamonacc --help | head -5 ; echo "---" ; ls -d /home/*/
+```
+
+**Résultat observé :** `bash: clamonacc : commande introuvable`.
+
+Ce n'est pas un défaut d'installation : le binaire se trouve dans `/usr/sbin`, qui ne fait pas partie du `PATH` d'un compte non administrateur. C'est exactement la même situation que celle rencontrée lors de la jonction du poste au domaine, où `realm` devait être appelé par son chemin complet `/usr/sbin/realm`. Le composant est bien présent, comme le confirme son démarrage en 5.5 ; seul son appel direct depuis ce compte nécessiterait le chemin complet. Le service systemd créé plus loin utilise de toute façon `/usr/sbin/clamonacc`.
+
+Le listage des dossiers personnels retourne :
+
+```
+/home/administrateur/   /home/jfernandes@ad.jcorp/
+```
+
+Les deux comptes disposent donc d'un dossier personnel : le compte local d'administration, et le compte Active Directory créé par `pam_mkhomedir` lors de la première connexion de Joshua Fernandes. **Je retiens le dossier du compte local** comme périmètre de ce TP, afin de pouvoir déclencher et observer la détection dans la même session. L'extension au dossier du compte du domaine est traitée en 5.8.
+
+![Vérification du composant et dossiers personnels](images/etape4-prerequis.png)
+
+### 5.3 Préparation de la quarantaine
+
+```bash
+mkdir -p ~/Téléchargements
+sudo mkdir -p /var/quarantine && sudo chmod 700 /var/quarantine && ls -ld /var/quarantine
+```
+
+**Résultat observé :** `drwx------ 2 root root /var/quarantine`.
+
+Les permissions `700` sont un choix délibéré : la quarantaine contient des fichiers reconnus comme malveillants, et seul `root` doit pouvoir y accéder. Un utilisateur ne doit pouvoir ni les consulter, ni les exécuter, ni les restaurer de sa propre initiative.
+
+![Création du dossier de quarantaine](images/etape4-quarantaine.png)
+
+### 5.4 Configuration de la surveillance
+
+Les directives de l'analyse à l'accès sont ajoutées à la fin de `/etc/clamav/clamd.conf`.
+
+```bash
+sudo tee -a /etc/clamav/clamd.conf > /dev/null <<'EOF'
+
+# --- Analyse en temps reel, TP ClamAV du 12 novembre 2026 ---
+OnAccessPrevention yes
+OnAccessIncludePath /home/administrateur/Téléchargements
+OnAccessExcludeUname clamav
+OnAccessExcludeRootUID yes
+EOF
+```
+
+| Directive | Rôle |
+| --- | --- |
+| `OnAccessPrevention yes` | Active l'analyse à l'accès |
+| `OnAccessIncludePath` | Restreint la surveillance à ce répertoire ; la directive est répétable |
+| `OnAccessExcludeUname clamav` | Exclut les accès réalisés par le compte de service |
+| `OnAccessExcludeRootUID yes` | Exclut les accès réalisés par `root` |
+
+Les deux dernières directives ne sont pas facultatives. Lorsque le démon analyse un fichier, il doit l'ouvrir pour le lire : cette ouverture est elle-même un accès, qui déclencherait une nouvelle analyse, qui provoquerait un nouvel accès, et ainsi de suite. Exclure le compte `clamav` rompt cette boucle. L'exclusion de `root` est recommandée sur un poste de travail, où l'essentiel de l'activité des utilisateurs se fait sous des comptes non privilégiés.
+
+**Conséquence sur la procédure de test :** un fichier créé avec `sudo` ne sera pas détecté, puisque l'accès sera attribué à `root`. Le test de 5.6 est donc exécuté sous le compte utilisateur, sans élévation de privilèges.
+
+Le contrôle de l'ajout révèle par ailleurs une directive déjà présente dans la configuration par défaut, juste au-dessus du bloc ajouté :
+
+```bash
+tail -8 /etc/clamav/clamd.conf
+```
+
+```
+BytecodeTimeout 60000
+OnAccessMaxFileSize 5M
+```
+
+![Ajout des directives de temps réel](images/etape4-config-ajout.png)
+
+![Contrôle de la configuration](images/etape4-config-verif.png)
+
+#### Limite relevée : `OnAccessMaxFileSize 5M`
+
+Cette directive, présente par défaut dans la configuration Debian, signifie que **les fichiers de plus de 5 Mio ne sont pas analysés en temps réel**. Un logiciel malveillant dépassant cette taille serait donc écrit dans le répertoire surveillé sans déclencher de détection.
+
+Ce réglage par défaut est un compromis de performance : l'analyse à l'accès est synchrone et un fichier volumineux retarderait l'opération d'écriture qui l'a déclenchée. Il a toutefois deux conséquences qu'il faut avoir en tête :
+
+- La protection en temps réel ne constitue pas à elle seule une couverture complète. C'est l'une des raisons pour lesquelles **l'analyse planifiée de l'étape 5 reste nécessaire** : elle, n'applique pas cette limite de taille.
+- Sur un serveur recevant des documents déposés par des tiers, cette valeur devrait être relevée en fonction de la taille maximale des fichiers acceptés par l'application.
+
+Je conserve la valeur par défaut pour ce TP, et je la documente comme une limite connue plutôt que de laisser croire à une protection sans faille.
+
+### 5.5 Service systemd dédié
+
+Un service par défaut existe, mais j'en crée un personnalisé afin de maîtriser les options passées au scanner.
+
+```bash
+sudo tee /etc/systemd/system/clamonacc.service > /dev/null <<'EOF'
+[Unit]
+Description=ClamAV On-Access Scanner
+Requires=clamav-daemon.service
+After=clamav-daemon.service syslog.target network.target
+
+[Service]
+Type=simple
+User=root
+ExecStart=/usr/sbin/clamonacc -F --fdpass --log=/var/log/clamav/clamonacc.log --move=/var/quarantine
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
+EOF
+```
+
+| Élément | Rôle |
+| --- | --- |
+| `Requires` et `After` | Le scanner dépend du démon et ne démarre qu'après lui |
+| `-F` | Maintient le processus au premier plan, systemd se chargeant de la supervision |
+| `--fdpass` | Transmet le descripteur de fichier au démon, ce qui évite les refus d'accès dans les dossiers personnels |
+| `--log` | Journal propre au temps réel, distinct de celui du démon |
+| `--move` | Déplace en quarantaine au lieu de supprimer |
+| `Restart=on-failure` | Relance le scanner en cas d'arrêt anormal |
+
+Le choix de `--move` plutôt que d'une suppression est important en exploitation : il conserve la possibilité d'analyser l'élément détecté, de confirmer qu'il ne s'agit pas d'un faux positif et, le cas échéant, de le restituer à l'utilisateur.
+
+L'activation respecte un ordre précis : le démon doit relire sa configuration **avant** que le scanner ne s'y connecte.
+
+```bash
+sudo systemctl daemon-reload && sudo systemctl restart clamav-daemon
+sudo systemctl enable --now clamonacc && sleep 3 && systemctl status clamonacc --no-pager
+```
+
+**Résultat observé :**
+
+| Élément | Valeur relevée |
+| --- | --- |
+| État | `active (running)` depuis 10:08:58 |
+| Démarrage automatique | `enabled` |
+| Processus principal | PID 6766, `/usr/sbin/clamonacc -F --fdpass --log=... --move=...` |
+| Mémoire du service | **2,8 Mio** (pic 3 Mio) |
+| Tâches | 8 |
+| Temps processeur | 28 ms |
+
+Le contraste avec les 947,4 Mio du démon est éclairant sur l'architecture retenue : `clamonacc` ne contient aucun moteur d'analyse. Il se contente de surveiller les événements du système de fichiers et de transmettre le travail à `clamd`. Le coût de la protection en temps réel n'est donc pas celui de ce service, mais celui du démon déjà mesuré à l'étape 2.
+
+![Création du service clamonacc](images/etape4-service-unite.png)
+
+![Statut du service de temps réel](images/etape4-service-clamonacc.png)
+
+### 5.6 Test de la protection
+
+Le journal du temps réel est affiché en continu dans un second terminal :
+
+```bash
+sudo tail -f /var/log/clamav/clamonacc.log
+```
+
+Le fichier de test est ensuite créé dans le répertoire surveillé, **sans élévation de privilèges**, pour les raisons exposées en 5.4 :
+
+```bash
+printf '%s%s' 'X5O!P%@AP[4\PZX54(P^)7CC)7}$EICAR-ST' 'ANDARD-ANTIVIRUS-TEST-FILE!$H+H*' > ~/Téléchargements/eicar.txt
+ls -l ~/Téléchargements/ ; echo "---" ; sudo ls -l /var/quarantine/
+```
+
+**Résultat observé dans le journal :**
+
+```
+ClamInotif: watching '/home/administrateur/Téléchargements' (and all sub-directories)
+/home/administrateur/Téléchargements/eicar.txt: Eicar-Test-Signature FOUND
+/home/administrateur/Téléchargements/eicar.txt: moved to '/var/quarantine/eicar.txt'
+```
+
+**Résultat observé sur le système de fichiers :**
+
+| Répertoire | Contenu |
+| --- | --- |
+| `~/Téléchargements/` | **vide** (`total 0`) |
+| `/var/quarantine/` | `eicar.txt`, 68 octets, horodaté 10:13 |
+
+La première ligne du journal confirme le périmètre effectivement surveillé, sous-répertoires compris. Les deux suivantes montrent la séquence complète : détection, puis déplacement.
+
+Le point essentiel est qu'**aucune commande d'analyse n'a été lancée**. À l'étape 3, il fallait exécuter `clamscan` pour que la détection ait lieu ; ici, la simple écriture du fichier a suffi. C'est toute la différence entre une analyse à la demande et une protection en temps réel.
+
+![Détection en temps réel et mise en quarantaine](images/etape4-detection-quarantaine.png)
+
+![Journal de l'analyse à l'accès](images/etape4-journal-tempsreel.png)
+
+### 5.7 Contrôles de fin d'étape
+
+| Contrôle | Résultat attendu | Résultat observé | Conforme |
+| --- | --- | --- | --- |
+| Service de temps réel actif | `active (running)` | PID 6766, actif depuis 10:08:58 | Oui |
+| Périmètre surveillé | Le répertoire ciblé et ses sous-répertoires | Confirmé par la ligne `ClamInotif: watching` | Oui |
+| Détection sans commande | Le fichier est signalé dès son écriture | `Eicar-Test-Signature FOUND` | Oui |
+| Mise en quarantaine | Le fichier quitte le répertoire surveillé | Répertoire vide, fichier présent dans `/var/quarantine` | Oui |
+| Protection de la quarantaine | Accès réservé à `root` | `drwx------ root root` | Oui |
+| Journalisation dédiée | Trace dans `clamonacc.log` | Détection et déplacement tracés | Oui |
+
+### 5.8 Limites de la configuration retenue et prolongements
+
+Trois réserves sont à consigner pour que cette étape ne soit pas lue comme une protection complète du poste.
+
+1. **Le périmètre est volontairement étroit.** Seul `/home/administrateur/Téléchargements` est surveillé. Le dossier personnel du compte du domaine, `/home/jfernandes@ad.jcorp`, existe mais n'est pas couvert. L'étendre consisterait à ajouter une seconde directive `OnAccessIncludePath`. Ce choix n'a pas été retenu ici afin de garder un test reproductible dans une seule session, mais il constituerait la première extension à apporter pour un poste réellement utilisé.
+2. **La limite de taille de 5 Mio s'applique**, comme analysé en 5.4.
+3. **La surveillance d'une arborescence large a un coût.** Étendre le périmètre à `/home` entier sur une machine à 2 vCPU imposerait d'exclure les répertoires de cache, à l'image de ce que recommande la documentation avec `OnAccessExcludePath`.
+
+Ces trois points expliquent pourquoi l'analyse à l'accès ne remplace pas l'analyse planifiée mise en place à l'étape suivante : les deux mécanismes sont complémentaires, le premier réagissant immédiatement sur un périmètre restreint, le second balayant plus largement mais en différé.
 
 ---
 
@@ -546,7 +751,8 @@ Tableau de validation à compléter au fur et à mesure. Un contrôle n'est déc
 | 5 | Détection à la demande | EICAR détecté par `clamscan` | **Conforme** — `Eicar-Test-Signature FOUND`, fichier sain non signalé | `etape3-scan-eicar.png` |
 | 5 bis | Remédiation | Le fichier détecté est supprimé | **Conforme** — `Removed.` | `etape3-suppression-journal.png` |
 | 5 ter | Écart `clamscan` / `clamdscan` | Le client du démon est plus rapide | **Conforme** — 0,045 s contre 17,955 s | `etape3-comparaison-scan.png` |
-| 6 | Détection en temps réel | EICAR détecté et déplacé en quarantaine dès son écriture | _à renseigner_ | _à produire_ |
+| 6 | Détection en temps réel | EICAR détecté et déplacé en quarantaine dès son écriture | **Conforme** — aucune commande d'analyse lancée | `etape4-journal-tempsreel.png` |
+| 6 bis | Protection de la quarantaine | Accès réservé à `root` | **Conforme** — `drwx------ root root` | `etape4-quarantaine.png` |
 | 7 | Journalisation | Détection tracée dans le journal correspondant | **Conforme** — empreinte MD5 et taille dans `clamav.log` ; `clamscan` ne journalise pas sans `--log` | `etape3-suppression-journal.png` |
 | 8 | Analyse planifiée | *Timer* actif et prochaine exécution affichée | _à renseigner_ | _à produire_ |
 | 9 | Interface graphique | ClamUI lancé, état du moteur et des signatures affiché | _à renseigner_ | _à produire_ |

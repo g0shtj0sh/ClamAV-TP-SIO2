@@ -27,8 +27,14 @@ Les captures de ce TP sont déposées dans ce dossier et appelées depuis [le ra
 | `etape3-scan-eicar.png` | Détection du fichier de test par `clamscan` | **Produite** |
 | `etape3-comparaison-scan.png` | Temps mesurés pour `clamscan` et `clamdscan` | **Produite** |
 | `etape3-suppression-journal.png` | Suppression du fichier détecté et journal du démon | **Produite** |
-| `etape4-temps-reel.png` | Journal `clamonacc` au moment de la détection | À produire |
-| `etape4-quarantaine.png` | Fichier déplacé dans le dossier de quarantaine | À produire |
+| `etape4-prerequis.png` | Vérification de `clamonacc` et listage des dossiers personnels | **Produite** |
+| `etape4-quarantaine.png` | Création du dossier de quarantaine et ses permissions | **Produite** |
+| `etape4-config-ajout.png` | Ajout des directives de temps réel dans `clamd.conf` | **Produite** |
+| `etape4-config-verif.png` | Contrôle de la configuration, dont `OnAccessMaxFileSize` | **Produite** |
+| `etape4-service-unite.png` | Création de l'unité `clamonacc.service` | **Produite** |
+| `etape4-service-clamonacc.png` | `systemctl status clamonacc` | **Produite** |
+| `etape4-detection-quarantaine.png` | Répertoire surveillé vidé et fichier en quarantaine | **Produite** |
+| `etape4-journal-tempsreel.png` | Journal `clamonacc` au moment de la détection | **Produite** |
 | `etape5-timer.png` | `systemctl list-timers` avec la prochaine exécution | À produire |
 | `etape6-clamui-accueil.png` | Tableau de bord ClamUI, état du moteur et des signatures | À produire |
 | `etape6-clamui-scan.png` | Résultat d'une analyse lancée depuis ClamUI | À produire |

@@ -47,7 +47,7 @@ ClamAV est ici utilisé comme **une** brique de sécurité, pas comme une protec
 - [x] Étape 1 — Installation du moteur et des signatures *(12 novembre 2026, ClamAV 1.4.3, 108 Mio de signatures)*
 - [x] Étape 2 — Démon `clamav-daemon` *(actif, 947 Mio en mémoire, socket locale sans exposition réseau)*
 - [x] Étape 3 — Test de détection EICAR *(détecté, supprimé et journalisé ; écart de 400 pour 1 entre `clamscan` et `clamdscan`)*
-- [ ] Étape 4 — Protection en temps réel et quarantaine
+- [x] Étape 4 — Protection en temps réel et quarantaine *(détection sans commande, déplacement automatique vers `/var/quarantine`)*
 - [ ] Étape 5 — Analyse planifiée
 - [ ] Étape 6 — Interface graphique ClamUI
 - [ ] Étape 7 — Recette et conclusion
