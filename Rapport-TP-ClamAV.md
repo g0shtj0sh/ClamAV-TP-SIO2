@@ -1067,7 +1067,62 @@ Cet écart est corrigé en 7.8 par une analyse portant sur une cible contenant e
 
 ### 7.8 Analyse d'une cible non vide depuis l'interface
 
-_Section à compléter : analyse de `~/Documents` depuis l'interface, détection de `test-clamui.txt` et traitement de l'élément détecté._
+L'analyse est relancée après avoir remplacé la cible du profil par `/home/administrateur/Documents`, répertoire qui contient le fichier de test préparé en 7.5. La présence effective de ce fichier est contrôlée au préalable en ligne de commande, afin de ne pas réinterpréter un nouveau résultat nul :
+
+```bash
+ls -l ~/Documents/
+```
+
+`test-clamui.txt`, 68 octets, est bien présent.
+
+**Résultat observé :** le bandeau passe au jaune, « Analyse terminée — 1 menace détectée », et le bloc de synthèse affiche désormais l'état **Infecté** avec **1 fichier analysé** et **1 menace**.
+
+Le contraste avec l'analyse précédente est explicite : même profil, même outil, seule la cible a changé. Cela confirme l'interprétation de l'écart 2 — le verdict « Sain » obtenu auparavant ne décrivait pas l'état du poste, mais l'absence de fichier à examiner.
+
+![Analyse avec détection effective](images/etape6-clamui-scan-detection.png)
+
+#### L'écran de résultats
+
+Le détail de l'analyse présente la menace avec les éléments nécessaires à une décision.
+
+| Information | Valeur |
+| --- | --- |
+| Nom de la signature | `Eicar-Test-Signature` |
+| Niveau de gravité | **Faible** |
+| Chemin | `/home/administrateur/Documents/test-clamui.txt` |
+| Fichiers analysés | 1 |
+| Répertoires | 1 |
+| Menaces détectées | 1 |
+
+Le classement en gravité **Faible** est cohérent : l'interface reconnaît qu'il s'agit d'une signature de test et non d'un logiciel malveillant réel. C'est une information utile en exploitation, car elle permet de hiérarchiser les détections au lieu de les traiter toutes avec la même urgence.
+
+#### Observation : l'interface ne décide pas à la place de l'opérateur
+
+Le point le plus notable de cet écran est ce qu'il **ne fait pas**. Trois actions sont proposées pour la menace détectée — `Quarantaine`, `Exclure`, `Copier le chemin` — ainsi qu'un bouton global `Tout mettre en quarantaine`. **Le fichier détecté n'a pas été déplacé** : il est toujours à son emplacement d'origine, et c'est à l'opérateur de choisir la suite.
+
+Ce comportement est l'inverse de celui des mécanismes automatiques configurés aux étapes 4 et 5, où l'option `--move` déplaçait l'élément en quarantaine sans intervention. Les deux approches répondent à des besoins différents :
+
+| | Services systemd (étapes 4 et 5) | Interface ClamUI (étape 6) |
+| --- | --- | --- |
+| Traitement | Automatique, immédiat | Proposé, soumis à décision |
+| Opérateur présent | Non | Oui |
+| Risque de faux positif | Un fichier légitime peut être déplacé sans que personne ne le sache | L'opérateur arbitre avant d'agir |
+| Usage adapté | Protection de fond, nuit et temps réel | Analyse ponctuelle, levée de doute |
+
+L'option `Exclure` mérite d'être signalée pour ce qu'elle implique : elle permet d'écarter durablement un élément des analyses suivantes. C'est la réponse adaptée à un faux positif avéré, mais c'est aussi une décision qui crée une zone aveugle dans la détection. Sur un poste d'entreprise, ce type d'exclusion devrait être tracé et justifié, au même titre qu'une dérogation de sécurité.
+
+![Résultats détaillés et actions proposées](images/etape6-clamui-resultats.png)
+
+### 7.9 Contrôles de fin d'étape
+
+| Contrôle | Résultat attendu | Résultat observé | Conforme |
+| --- | --- | --- | --- |
+| Installation | Les deux paquets s'installent sans erreur | Aucune dépendance manquante sur Debian 13 | Oui |
+| Intégrité des paquets | Empreintes conformes | `Réussi` pour les deux `.deb` | Oui |
+| Cohérence avec la ligne de commande | Mêmes versions et mêmes états | Version, base et PID de `freshclam` identiques | Oui |
+| Analyse depuis l'interface | Détection d'une menace | `Eicar-Test-Signature`, gravité Faible, 1 fichier analysé | Oui |
+| Audit du système | Diagnostic affiché | 0 problème, 3 avertissements sur le pare-feu | Oui |
+| Cohérence des quarantaines | Détections automatiques visibles | **Non** — quarantaine distincte, voir 7.7 | Non |
 
 ---
 
@@ -1093,7 +1148,7 @@ Tableau de validation à compléter au fur et à mesure. Un contrôle n'est déc
 | 9 | Interface graphique | ClamUI lancé, état du moteur et des signatures affiché | **Conforme** — version et base identiques aux relevés en ligne de commande | `etape6-clamui-composants.png` |
 | 9 bis | Audit de sécurité | Diagnostic du poste affiché | **Conforme** — 0 problème, 3 avertissements sur le pare-feu | `etape6-clamui-audit.png` |
 | 9 ter | Absence d'écoute réseau | Aucun port associé au démon | **Conforme** — confirme le contrôle 4 bis par un second moyen | `etape6-clamui-reseau.png` |
-| 10 | Scan depuis l'interface | Analyse déclenchée et menace détectée | **Non concluant** — analyse réalisée sur un répertoire vide, 0 fichier analysé ; à refaire sur une cible non vide | `etape6-clamui-analyse.png` |
+| 10 | Scan depuis l'interface | Analyse déclenchée et menace détectée | **Conforme** — `Eicar-Test-Signature`, gravité Faible, 1 fichier analysé sur 1 | `etape6-clamui-scan-detection.png` |
 | 10 bis | Cohérence des quarantaines | Les détections automatiques visibles dans l'interface | **Non conforme** — l'interface gère une quarantaine distincte de `/var/quarantine` ; écart documenté en 7.7 | `etape6-clamui-quarantaine.png` |
 
 ---

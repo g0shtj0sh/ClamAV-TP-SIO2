@@ -53,7 +53,8 @@ Les captures de ce TP sont déposées dans ce dossier et appelées depuis [le ra
 | `etape6-clamui-audit.png` | Audit de sécurité du système | **Produite** |
 | `etape6-clamui-reseau.png` | Connexions réseau, absence de port lié au démon | **Produite** |
 | `etape6-clamui-analyse.png` | Analyse rapide sur un répertoire vide | **Produite** |
-| `etape6-clamui-scan-detection.png` | Analyse de `~/Documents` avec détection effective | À produire |
+| `etape6-clamui-scan-detection.png` | Analyse de `~/Documents` avec détection effective | **Produite** |
+| `etape6-clamui-resultats.png` | Détail de la menace et actions proposées | **Produite** |
 
 Ce tableau est mis à jour au fur et à mesure : une ligne passe à « Produite » seulement quand le fichier est présent dans ce dossier.
 

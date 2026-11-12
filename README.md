@@ -49,7 +49,7 @@ ClamAV est ici utilisé comme **une** brique de sécurité, pas comme une protec
 - [x] Étape 3 — Test de détection EICAR *(détecté, supprimé et journalisé ; écart de 400 pour 1 entre `clamscan` et `clamdscan`)*
 - [x] Étape 4 — Protection en temps réel et quarantaine *(détection sans commande, déplacement automatique vers `/var/quarantine`)*
 - [x] Étape 5 — Analyse planifiée *(timer hebdomadaire actif, couvre tout `/home` sans limite de taille)*
-- [ ] Étape 6 — Interface graphique ClamUI
+- [x] Étape 6 — Interface graphique ClamUI *(ClamUI 0.6.0, détection validée ; deux écarts avec la ligne de commande documentés)*
 - [ ] Étape 7 — Recette et conclusion
 
 Aucune case n'est cochée avant que le contrôle correspondant ait été exécuté et sa preuve enregistrée.
