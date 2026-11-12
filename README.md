@@ -6,8 +6,8 @@ Ce dépôt est volontairement séparé de celui de l'infrastructure : [**JCorp-S
 
 | Document | Contenu | État |
 | --- | --- | --- |
-| [Rapport du TP](Rapport-TP-ClamAV.md) | Déroulé complet, commandes, résultats observés et captures | En cours de réalisation |
-| [Guide des captures](images/README.md) | Nomenclature des images attendues | Préparé |
+| [Rapport du TP](Rapport-TP-ClamAV.md) | Déroulé complet, commandes, résultats observés et captures | **Terminé** |
+| [Guide des captures](images/README.md) | Nomenclature des images | 41 captures sur 42 |
 
 ## Contexte
 
@@ -50,9 +50,11 @@ ClamAV est ici utilisé comme **une** brique de sécurité, pas comme une protec
 - [x] Étape 4 — Protection en temps réel et quarantaine *(détection sans commande, déplacement automatique vers `/var/quarantine`)*
 - [x] Étape 5 — Analyse planifiée *(timer hebdomadaire actif, couvre tout `/home` sans limite de taille)*
 - [x] Étape 6 — Interface graphique ClamUI *(ClamUI 0.6.0, détection validée ; deux écarts avec la ligne de commande documentés)*
-- [ ] Étape 7 — Recette et conclusion
+- [x] Étape 7 — Recette et conclusion *(19 contrôles conformes sur 20, l'écart restant étant démontré et expliqué)*
 
 Aucune case n'est cochée avant que le contrôle correspondant ait été exécuté et sa preuve enregistrée.
+
+**TP terminé le 12 novembre 2026.** Les quatre mécanismes de protection sont en service sur la VM 702 : analyse à la demande, protection en temps réel, analyse hebdomadaire planifiée et interface graphique. Les limites rencontrées et les prolongements envisagés sont traités au chapitre 9 du rapport.
 
 ## Sources
 

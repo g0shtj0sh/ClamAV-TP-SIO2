@@ -1049,6 +1049,47 @@ C'est un point d'exploitation important : un administrateur qui ne consulterait 
 
 ![Quarantaine vue depuis l'interface](images/etape6-clamui-quarantaine.png)
 
+#### Vérification de cette hypothèse
+
+L'explication ci-dessus a été mise à l'épreuve plutôt que supposée. Après avoir cliqué sur `Quarantaine` depuis l'écran de résultats de 7.8, les deux espaces ont été comparés.
+
+**Côté interface**, la quarantaine contient désormais un élément :
+
+| Information affichée | Valeur |
+| --- | --- |
+| Taille totale | 68 B |
+| Éléments | 1 |
+| Menace | `Eicar-Test-Signature` |
+| État | Mis en quarantaine |
+| Chemin d'origine | `/home/administrateur/Documents/test-clamui.txt` |
+| Date de mise en quarantaine | 12/11/2026 10:38:07 |
+| Actions disponibles | `Restaurer`, `Supprimer` |
+
+**Côté système de fichiers :**
+
+```bash
+sudo ls -l /var/quarantine/ ; ls -l ~/Documents/
+```
+
+```
+total 8
+-rw-rw-r-- 1 administrateur administrateur 68 12 nov. 10:13 eicar.txt
+-rw-rw-r-- 1 administrateur administrateur 68 12 nov. 10:17 eicar.txt.001
+total 0
+```
+
+Le résultat est sans ambiguïté. `~/Documents` est vide : le fichier a bien été déplacé. Mais `/var/quarantine` contient **toujours les deux mêmes fichiers** issus des étapes 4 et 5, aux horodatages 10:13 et 10:17 : **aucun troisième élément n'y a été ajouté à 10:38**.
+
+L'hypothèse est donc confirmée : ClamUI a déplacé le fichier dans son propre espace de stockage, sans tenir compte du répertoire imposé aux services par l'option `--move`.
+
+La raison de cette séparation apparaît d'ailleurs dans l'affichage lui-même. L'interface conserve le **chemin d'origine** de chaque élément et propose un bouton `Restaurer` : elle a besoin de métadonnées que le simple déplacement d'un fichier ne permet pas de stocker. C'est cette fonction de restauration qui justifie un espace géré, là où `--move` se contente d'un `mv` vers un répertoire.
+
+**Conclusion de cet écart :** les deux mécanismes ne sont pas interchangeables et surtout, ils ne se voient pas l'un l'autre. Sur ce poste, un incident détecté par la protection en temps réel resterait invisible depuis le tableau de bord, et réciproquement. C'est la limite la plus concrète relevée au cours de ce TP.
+
+![Quarantaine de l'interface après mise en quarantaine](images/etape6-clamui-quarantaine-remplie.png)
+
+![Les deux quarantaines comparées](images/etape6-deux-quarantaines.png)
+
 #### Écart 2 — Une analyse « saine » qui n'a rien analysé
 
 L'écran *Analyse* affiche « Analyse terminée — aucune menace détectée » avec le verdict **Sain**. Mais la ligne juste en dessous indique : **« 0 fichier analysé, 0 menace »**.
@@ -1128,7 +1169,7 @@ L'option `Exclure` mérite d'être signalée pour ce qu'elle implique : elle per
 
 ## 8. Étape 7 — Recette
 
-Tableau de validation à compléter au fur et à mesure. Un contrôle n'est déclaré conforme que si sa preuve est enregistrée.
+Tableau de validation renseigné au fur et à mesure du TP. Un contrôle n'est déclaré conforme que si sa preuve est enregistrée. **Dix-neuf contrôles sur vingt sont conformes** ; le seul écart, relatif à la cohérence des quarantaines, a été démontré et expliqué en 7.7.
 
 | N° | Contrôle | Résultat attendu | Résultat | Preuve |
 | --- | --- | --- | --- | --- |
@@ -1149,19 +1190,79 @@ Tableau de validation à compléter au fur et à mesure. Un contrôle n'est déc
 | 9 bis | Audit de sécurité | Diagnostic du poste affiché | **Conforme** — 0 problème, 3 avertissements sur le pare-feu | `etape6-clamui-audit.png` |
 | 9 ter | Absence d'écoute réseau | Aucun port associé au démon | **Conforme** — confirme le contrôle 4 bis par un second moyen | `etape6-clamui-reseau.png` |
 | 10 | Scan depuis l'interface | Analyse déclenchée et menace détectée | **Conforme** — `Eicar-Test-Signature`, gravité Faible, 1 fichier analysé sur 1 | `etape6-clamui-scan-detection.png` |
-| 10 bis | Cohérence des quarantaines | Les détections automatiques visibles dans l'interface | **Non conforme** — l'interface gère une quarantaine distincte de `/var/quarantine` ; écart documenté en 7.7 | `etape6-clamui-quarantaine.png` |
+| 10 bis | Cohérence des quarantaines | Les détections automatiques visibles dans l'interface | **Non conforme, écart démontré** — l'interface alimente son propre espace, `/var/quarantine` reste inchangé | `etape6-deux-quarantaines.png` |
 
 ---
 
 ## 9. Limites et conclusion
 
-_Section à rédiger en fin de TP. Points à traiter :_
+### 9.1 Ce qui a été mis en place
 
-- ClamAV repose principalement sur des signatures : il est efficace sur les menaces connues, mais nettement moins sur les attaques du jour et les variantes fortement obfusquées. Ce n'est pas un EDR.
-- L'outil est conçu avant tout pour des serveurs Linux ; sur un poste de travail il apporte une protection utile mais partielle.
-- Le coût en CPU, en mémoire et en temps d'analyse est réel, ce qu'illustre concrètement la contrainte de mémoire rencontrée sur la VM 702.
-- ClamAV doit être considéré comme une brique parmi d'autres, aux côtés du filtrage en amont, du durcissement du système, du contrôle des accès et de la sensibilisation des utilisateurs.
-- Prolongement possible dans le projet JCorp : remonter l'état de l'antivirus et les détections vers la supervision Grafana/Prometheus prévue en atelier professionnel 1, afin de ne plus dépendre d'un contrôle poste par poste.
+Le poste Debian de l'infrastructure JCorp dispose à l'issue de ce TP de quatre mécanismes complémentaires, chacun validé par un test de détection.
+
+| Mécanisme | Déclenchement | Périmètre | Traitement |
+| --- | --- | --- | --- |
+| Analyse à la demande | Commande de l'opérateur | Cible choisie | Selon les options passées |
+| Protection en temps réel | Écriture d'un fichier | `~/Téléchargements`, fichiers de moins de 5 Mio | Déplacement automatique vers `/var/quarantine` |
+| Analyse planifiée | Chaque dimanche à 2 h | Tout `/home`, sans limite de taille | Déplacement automatique vers `/var/quarantine` |
+| Interface ClamUI | Clic de l'opérateur | Cible choisie | Proposé, soumis à décision |
+
+Quelques valeurs mesurées qui caractérisent cette installation :
+
+| Indicateur | Valeur relevée |
+| --- | --- |
+| Version du moteur | ClamAV 1.4.3 |
+| Signatures chargées | 3 628 258 |
+| Volume des bases sur disque | 108 Mio |
+| Mémoire occupée par le démon | 947,4 Mio |
+| Mémoire cumulée pendant une analyse planifiée | environ 1,9 Gio |
+| Écart de performance `clamscan` / `clamdscan` | 17,955 s contre 0,045 s |
+| Délai de détection en temps réel | immédiat |
+
+### 9.2 Limites relevées au cours du TP
+
+Ces limites ne sont pas reprises d'une documentation : chacune a été constatée sur la machine.
+
+**Limites propres à ClamAV**
+
+1. **La détection repose sur des signatures.** ClamAV compare les fichiers à une base d'empreintes connues. Il est donc efficace sur les menaces répertoriées, et aveugle sur les attaques du jour comme sur les variantes suffisamment modifiées pour ne plus correspondre à aucune signature. Ce n'est pas un EDR : il n'observe pas le comportement des programmes.
+2. **Le moteur fourni par Debian n'est pas le plus récent.** La version 1.4.3 des dépôts accuse trois versions de retard sur la 1.4.6 publiée par le projet. La détection n'en souffre pas, puisqu'elle dépend des signatures, à jour du jour même ; les améliorations récentes du moteur, elles, ne sont pas disponibles.
+3. **Le coût en ressources est significatif.** Près de 1 Gio de mémoire en permanence pour le démon, autant pendant une analyse planifiée, et 17 secondes de chargement à chaque appel de `clamscan`. Sur la configuration d'origine de la VM à 2 Gio, l'installation complète n'aurait pas tenu.
+
+**Limites de la configuration retenue**
+
+4. **La limite `OnAccessMaxFileSize 5M`** exclut de l'analyse en temps réel tout fichier dépassant 5 Mio. C'est précisément ce qui rend l'analyse planifiée indispensable et non redondante.
+5. **Le périmètre du temps réel est restreint** à un seul répertoire. Le dossier personnel du compte du domaine n'est couvert que par l'analyse hebdomadaire, donc avec un délai pouvant atteindre sept jours.
+6. **`clamscan` ne journalise rien sans l'option `--log`.** Une détection faite en ligne de commande disparaît avec le terminal. C'est une erreur facile à commettre en écrivant une tâche planifiée.
+7. **Deux quarantaines coexistent sans se voir.** Démontré en 7.7 : l'interface n'affiche pas les détections des services automatiques, et réciproquement. C'est la limite la plus pénalisante en exploitation réelle.
+
+**Limites du poste au-delà de l'antivirus**
+
+8. **Aucun pare-feu local n'est configuré**, comme l'a relevé l'audit de ClamUI. Le filtrage repose uniquement sur le pare-feu de la carte réseau au niveau de Proxmox.
+9. **La socket du démon est accessible à tout utilisateur local** (`LocalSocketMode 666`). Réglage par défaut adapté à un poste de travail, mais à resserrer sur un serveur.
+
+### 9.3 Ce qui n'a pas été vérifié
+
+Par honnêteté sur la portée de ce travail :
+
+- Le déclenchement automatique du timer **n'a pas été observé** : seule une exécution manuelle du service a été réalisée. La première exécution planifiée aura lieu le dimanche 15 novembre 2026.
+- Aucun test n'a été mené avec un **logiciel malveillant réel**, ni avec un fichier dépassant la limite de 5 Mio qui aurait confirmé expérimentalement cette limite.
+- Le comportement après un **redémarrage complet** du poste n'a pas été contrôlé, bien que les trois services soient déclarés `enabled`.
+- Aucun test de **faux positif** n'a été conduit sur des fichiers légitimes volumineux ou inhabituels.
+
+### 9.4 Prolongements pour le projet JCorp
+
+Ce TP porte sur un poste. Trois prolongements s'inscrivent naturellement dans la suite du projet.
+
+1. **Centraliser la surveillance.** Aujourd'hui, vérifier l'état de l'antivirus suppose d'ouvrir une session sur la machine. La supervision Grafana et Prometheus prévue en atelier professionnel 1 permettrait de remonter l'âge des signatures, l'état des services et le nombre de détections, et de déclencher une alerte si `freshclam` cessait de fonctionner ou si une détection survenait. C'est le prolongement le plus utile, car il transforme une protection locale en information exploitable pour l'administrateur.
+2. **Industrialiser le déploiement.** La procédure décrite ici est manuelle. L'appliquer à l'ensemble du parc Linux supposerait de la scripter, à l'image des scripts PowerShell déjà utilisés pour l'Active Directory dans le dépôt d'infrastructure.
+3. **Durcir le poste.** L'audit a mis en évidence l'absence de pare-feu local. L'antivirus ne couvre qu'un seul vecteur ; ClamAV reste une brique parmi d'autres, aux côtés du filtrage réseau, du durcissement du système, du contrôle des accès et de la sensibilisation des utilisateurs.
+
+### 9.5 Conclusion
+
+L'objectif du TP est atteint : le poste Debian de l'infrastructure JCorp dispose d'un antivirus fonctionnel, à jour, exploitable en ligne de commande comme depuis une interface graphique, avec une protection en temps réel et une analyse hebdomadaire planifiée. Les dix-neuf contrôles de la recette sont conformes, à l'exception d'un seul, dont l'écart a été démontré et expliqué.
+
+Au-delà de l'installation, ce travail aura surtout mis en évidence que les résultats affichés par un outil de sécurité demandent à être interprétés. Un service marqué `1/FAILURE` qui est en réalité un succès, un tableau de bord annonçant un système « protégé » après avoir analysé zéro fichier, une quarantaine affichée comme vide alors que deux fichiers y attendent : dans les trois cas, l'affichage était exact mais sa lecture naïve aurait été fausse. Savoir où regarder et quoi recouper importe autant que savoir installer.
 
 ---
 
