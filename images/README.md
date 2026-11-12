@@ -18,8 +18,11 @@ Les captures de ce TP sont déposées dans ce dossier et appelées depuis [le ra
 | `etape1-installation-paquets.png` | Installation APT des six paquets | **Produite** |
 | `etape1-version-moteur.png` | `clamscan --version` et liste des paquets installés | **Produite** |
 | `etape1-freshclam-controles.png` | Mise à jour des bases, activation du service et contrôles de fin d'étape | **Produite** |
-| `etape2-memoire-vm.png` | Mémoire de la VM 702 dans Proxmox | À produire |
-| `etape2-daemon-status.png` | `systemctl status clamav-daemon` | À produire |
+| `etape2-memoire-vm.png` | Mémoire de la VM 702 dans Proxmox, onglet Matériel | À produire |
+| `etape2-memoire-avant.png` | `free -h` avant activation du démon | **Produite** |
+| `etape2-daemon-status.png` | `systemctl status clamav-daemon` | **Produite** |
+| `etape2-processus-memoire.png` | Processus ClamAV et `free -h` après activation | **Produite** |
+| `etape2-socket-locale.png` | Directives de `clamd.conf` et `clamdscan --version` | **Produite** |
 | `etape3-scan-eicar.png` | Détection du fichier de test par `clamscan` | À produire |
 | `etape4-temps-reel.png` | Journal `clamonacc` au moment de la détection | À produire |
 | `etape4-quarantaine.png` | Fichier déplacé dans le dossier de quarantaine | À produire |

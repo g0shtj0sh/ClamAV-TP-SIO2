@@ -45,7 +45,7 @@ ClamAV est ici utilisé comme **une** brique de sécurité, pas comme une protec
 ## Avancement
 
 - [x] Étape 1 — Installation du moteur et des signatures *(12 novembre 2026, ClamAV 1.4.3, 108 Mio de signatures)*
-- [ ] Étape 2 — Démon `clamav-daemon`
+- [x] Étape 2 — Démon `clamav-daemon` *(actif, 947 Mio en mémoire, socket locale sans exposition réseau)*
 - [ ] Étape 3 — Test de détection EICAR
 - [ ] Étape 4 — Protection en temps réel et quarantaine
 - [ ] Étape 5 — Analyse planifiée

@@ -234,11 +234,124 @@ La protection en temps réel étant un objectif du TP et reposant sur le démon,
 | --- | --- | --- |
 | Mémoire de la VM 702 | 2 Gio | 4,8 Gio |
 
-![Mémoire de la VM 702 dans Proxmox](images/etape2-memoire-vm.png)
+_Capture de la configuration matérielle dans Proxmox à ajouter : `images/etape2-memoire-vm.png`._
 
-### 3.3 Activation et contrôle
+La mesure réalisée en 3.5 confirme a posteriori que cette décision était nécessaire.
 
-_À compléter._
+### 3.3 Relevé de la mémoire avant activation
+
+Pour chiffrer le coût réel du démon plutôt que de reprendre un ordre de grandeur trouvé dans la documentation, je relève l'état de la mémoire avant de l'activer.
+
+```bash
+free -h
+```
+
+**Résultat observé :** 4,8 Gio au total, 1,1 Gio utilisés, **3,7 Gio disponibles**.
+
+![Mémoire avant activation du démon](images/etape2-memoire-avant.png)
+
+### 3.4 Activation et contrôle du service
+
+```bash
+sudo systemctl enable --now clamav-daemon
+systemctl status clamav-daemon --no-pager
+```
+
+Comme pour `clamav-freshclam`, systemd synchronise l'unité avec le script de démarrage SysV encore fourni par le paquet Debian.
+
+**Résultat observé :**
+
+| Élément | Valeur relevée |
+| --- | --- |
+| État | `active (running)` depuis 09:55:48 |
+| Démarrage automatique | `enabled` |
+| Processus principal | PID 6348, `/usr/sbin/clamd --foreground=true` |
+| Mémoire du service | **947,4 Mio** (pic identique) |
+| Temps processeur consommé | 13,0 s |
+| Déclenché par | `clamav-daemon.socket` |
+| Fichier d'extension | `/etc/systemd/system/clamav-daemon.service.d/extend.conf` |
+
+Deux éléments de cette sortie méritent une explication.
+
+**L'activation par socket.** La ligne `TriggeredBy: clamav-daemon.socket` indique que le démon n'est pas simplement lancé au démarrage : systemd met en place la socket d'écoute et démarre `clamd` lorsqu'un client la sollicite. C'est le fonctionnement retenu par Debian, et il explique pourquoi le service peut apparaître à l'état `activating` pendant les premières dizaines de secondes : le temps processeur de 13 secondes relevé correspond au chargement des 3,64 millions de signatures en mémoire.
+
+**Les étapes préalables.** Les deux lignes `ExecStartPre` créent le répertoire `/run/clamav` et en attribuent la propriété à l'utilisateur `clamav`. C'est ce répertoire qui accueillera la socket locale.
+
+![Statut du démon clamav-daemon](images/etape2-daemon-status.png)
+
+### 3.5 Processus et coût réel en mémoire
+
+```bash
+ps -edf | grep clam | grep -v grep
+free -h
+```
+
+**Résultat observé :** deux processus, tous deux sous l'utilisateur non privilégié `clamav`.
+
+| PID | Processus | Démarré à | Rôle |
+| --- | --- | --- | --- |
+| 5926 | `/usr/bin/freshclam -d --foreground=true` | 09:38 | Mise à jour des signatures en tâche de fond |
+| 6348 | `/usr/sbin/clamd --foreground=true` | 09:55 | Moteur de détection résident |
+
+Le fait que les deux tournent sous `clamav` et non sous `root` est un point de sécurité favorable : une faille dans le moteur d'analyse ne donnerait pas directement les privilèges administrateur sur le poste.
+
+**Comparaison de la mémoire :**
+
+| Moment | Utilisée | Disponible |
+| --- | --- | --- |
+| Avant activation | 1,1 Gio | 3,7 Gio |
+| Après activation | 2,0 Gio | 2,8 Gio |
+| **Écart** | **+0,9 Gio** | **−0,9 Gio** |
+
+La mesure confirme l'ordre de grandeur annoncé au chapitre 1 et recoupe les 947,4 Mio rapportés par systemd. Elle valide surtout la décision de dimensionnement : sur la configuration d'origine à 2 Gio, le démon aurait occupé à lui seul près de la moitié de la mémoire de la machine, en concurrence directe avec le bureau GNOME. Dans la configuration retenue, il en consomme environ 20 % et laisse 2,8 Gio disponibles pour l'usage bureautique.
+
+![Processus ClamAV et mémoire après activation](images/etape2-processus-memoire.png)
+
+### 3.6 Mode de communication du démon
+
+Le démon peut être joint de deux façons : par une **socket locale**, c'est-à-dire un fichier spécial accessible uniquement depuis la machine, ou par un **port TCP**, qui l'exposerait au réseau. La recommandation est d'utiliser la socket locale lorsque les clients se trouvent sur la même machine, ce qui est le cas ici.
+
+```bash
+grep -E '^(LocalSocket|TCPSocket|User|LogFile)' /etc/clamav/clamd.conf
+clamdscan --version
+```
+
+**Résultat observé :**
+
+| Directive | Valeur | Commentaire |
+| --- | --- | --- |
+| `LocalSocket` | `/var/run/clamav/clamd.ctl` | Communication par fichier de socket |
+| `LocalSocketGroup` | `clamav` | Groupe propriétaire de la socket |
+| `LocalSocketMode` | `666` | Permissions de la socket, voir ci-dessous |
+| `User` | `clamav` | Compte de service non privilégié |
+| `LogFile` | `/var/log/clamav/clamav.log` | Journal du démon |
+| `TCPSocket` | **absente** | Aucune écoute réseau |
+
+L'absence de `TCPSocket` est le point le plus important : le démon n'ouvre aucun port et n'est donc pas joignable depuis le réseau `10.2.101.0/24`. La surface d'attaque se limite à la machine elle-même.
+
+#### Remarque sur les permissions de la socket
+
+La valeur `LocalSocketMode 666` signifie que **tout utilisateur local** du poste peut écrire dans la socket, et donc demander une analyse au démon. Ce n'est pas la configuration la plus restrictive possible, mais c'est le réglage par défaut de Debian et il est cohérent avec l'usage visé :
+
+- Sur un **poste de travail**, c'est ce qui permet à un utilisateur du domaine comme `jfernandes@ad.jcorp` d'analyser un fichier sans privilèges particuliers, et c'est une condition de fonctionnement de l'interface graphique ClamUI installée à l'étape 6.
+- Sur un **serveur**, on resserrerait ce réglage à `660` en s'appuyant sur `LocalSocketGroup`, de façon à n'autoriser que les comptes explicitement ajoutés au groupe `clamav`, par exemple celui du serveur web.
+
+Le risque résiduel sur un poste reste mesuré : un utilisateur local peut solliciter le moteur, pas en modifier la configuration ni lire des fichiers auxquels il n'a pas déjà accès. Je retiens donc le réglage par défaut et je documente l'arbitrage.
+
+Enfin, `clamdscan --version` répond `ClamAV 1.4.3/28181/Thu Nov 12 07:27:14 2026`, soit exactement la même version et la même base qu'à l'étape 1. La nuance est importante : cette information n'est plus produite par un moteur chargé pour l'occasion, elle est **renvoyée par le démon**. Le dialogue entre le client et le service est donc opérationnel.
+
+![Configuration de la socket locale et dialogue avec le démon](images/etape2-socket-locale.png)
+
+### 3.7 Contrôles de fin d'étape
+
+| Contrôle | Résultat attendu | Résultat observé | Conforme |
+| --- | --- | --- | --- |
+| Service actif | `active (running)` | `active (running)` depuis 09:55:48 | Oui |
+| Démarrage automatique | `enabled` | `enabled` | Oui |
+| Compte d'exécution | Utilisateur non privilégié | `clamav` pour `clamd` et `freshclam` | Oui |
+| Pas d'écoute réseau | Aucune directive `TCPSocket` | Absente, seule `LocalSocket` est définie | Oui |
+| Dialogue client/démon | Version renvoyée par le démon | `ClamAV 1.4.3/28181` | Oui |
+| Coût mémoire | De l'ordre de 1 Gio | 947,4 Mio, soit 0,9 Gio mesuré | Oui |
 
 ---
 
@@ -302,7 +415,8 @@ Tableau de validation à compléter au fur et à mesure. Un contrôle n'est déc
 | 1 | Moteur installé | Version de `clamscan` affichée | **Conforme** — ClamAV 1.4.3, paquets `1.4.3+dfsg-1` à l'état `ii` | `etape1-version-moteur.png` |
 | 2 | Signatures présentes | Trois bases `.cvd` dans `/var/lib/clamav/` | **Conforme** — 108 Mio, environ 3,64 millions de signatures, base du jour | `etape1-freshclam-controles.png` |
 | 3 | Mise à jour automatique | `clamav-freshclam` `enabled` et `active` | **Conforme** | `etape1-freshclam-controles.png` |
-| 4 | Démon opérationnel | `clamav-daemon` `active (running)` | _à renseigner_ | _à produire_ |
+| 4 | Démon opérationnel | `clamav-daemon` `active (running)` | **Conforme** — PID 6348, 947,4 Mio, sous le compte `clamav` | `etape2-daemon-status.png` |
+| 4 bis | Exposition réseau du démon | Aucune écoute TCP | **Conforme** — socket locale uniquement | `etape2-socket-locale.png` |
 | 5 | Détection à la demande | EICAR détecté par `clamscan` | _à renseigner_ | _à produire_ |
 | 6 | Détection en temps réel | EICAR détecté et déplacé en quarantaine dès son écriture | _à renseigner_ | _à produire_ |
 | 7 | Journalisation | Détection tracée dans le journal correspondant | _à renseigner_ | _à produire_ |
