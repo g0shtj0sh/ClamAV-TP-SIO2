@@ -1,0 +1,10 @@
+# Fichiers temporaires
+*.tmp
+*~
+.DS_Store
+Thumbs.db
+
+# Ne jamais versionner un echantillon de test antivirus
+eicar.txt
+eicar.com
+eicar*.zip
