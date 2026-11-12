@@ -13,12 +13,11 @@ Les captures de ce TP sont déposées dans ce dossier et appelées depuis [le ra
 
 | Fichier | Contenu attendu | État |
 | --- | --- | --- |
-| `clamav-fonctionnement.png` | Schéma des composants ClamAV | À produire |
-| `etape1-etat-initial.png` | `hostnamectl`, `free -h` et `df -h /` sur la VM 702 | À produire |
-| `etape1-prerequis-dns.png` | Résolution interne et externe, état de l'horloge | À produire |
-| `etape1-installation-paquets.png` | Installation APT et version du moteur | À produire |
-| `etape1-freshclam.png` | Téléchargement des bases, versions et nombre de signatures | À produire |
-| `etape1-controles.png` | Contenu de `/var/lib/clamav/` et état du service de mise à jour | À produire |
+| `etape1-etat-initial.png` | `apt update`, puis `hostnamectl`, `free -h` et `df -h /` sur la VM 702 | **Produite** |
+| `etape1-prerequis-dns.png` | Résolution interne et externe, état de l'horloge | **Produite** |
+| `etape1-installation-paquets.png` | Installation APT des six paquets | **Produite** |
+| `etape1-version-moteur.png` | `clamscan --version` et liste des paquets installés | **Produite** |
+| `etape1-freshclam-controles.png` | Mise à jour des bases, activation du service et contrôles de fin d'étape | **Produite** |
 | `etape2-memoire-vm.png` | Mémoire de la VM 702 dans Proxmox | À produire |
 | `etape2-daemon-status.png` | `systemctl status clamav-daemon` | À produire |
 | `etape3-scan-eicar.png` | Détection du fichier de test par `clamscan` | À produire |
