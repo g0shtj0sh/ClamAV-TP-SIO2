@@ -895,7 +895,82 @@ Je retiens donc la version **0.6.0**, publiée le 11 novembre 2026, qui règle c
 
 L'installation par Flatpak est écartée pour cette raison. Cet écart avec le tutoriel est assumé et documenté : reprendre la version du tutoriel aurait conduit à un échec d'installation sur Debian 13.
 
-_Section à compléter._
+### 7.3 Téléchargement et vérification d'intégrité
+
+Trois fichiers sont récupérés depuis les publications du projet : les deux paquets et le fichier d'empreintes qui les accompagne.
+
+```bash
+mkdir -p ~/clamui && cd ~/clamui
+wget -q --show-progress \
+  https://github.com/linx-systems/clamui/releases/download/v0.6.0/clamui_0.6.0_amd64.deb \
+  https://github.com/linx-systems/clamui/releases/download/v0.6.0/clamui-privileged-helper_0.6.0_amd64.deb \
+  https://github.com/linx-systems/clamui/releases/download/v0.6.0/SHA256SUMS
+ls -lh
+```
+
+**Résultat observé :** `clamui_0.6.0_amd64.deb` (13,06 Mio), `clamui-privileged-helper_0.6.0_amd64.deb` (517,52 Kio) et `SHA256SUMS` (1,37 Kio).
+
+![Téléchargement des paquets ClamUI](images/etape6-telechargement.png)
+
+#### Pourquoi contrôler l'empreinte
+
+Les paquets installés jusqu'ici provenaient des dépôts Debian : APT vérifie automatiquement leur signature cryptographique, et une altération en transit ou sur un miroir compromis serait détectée sans intervention de ma part. Ce n'est pas le cas ici : ces deux fichiers sont téléchargés en dehors de ce mécanisme, et rien ne les authentifie par défaut.
+
+Installer un paquet `.deb` revient à exécuter du code avec les privilèges d'administrateur sur la machine. Dans un travail portant sur la sécurité, contrôler l'empreinte avant installation n'est donc pas une formalité : c'est la seule garantie que le fichier reçu est bien celui publié par le projet.
+
+```bash
+sha256sum -c --ignore-missing SHA256SUMS
+```
+
+**Résultat observé :**
+
+```
+clamui-privileged-helper_0.6.0_amd64.deb: Réussi
+clamui_0.6.0_amd64.deb: Réussi
+```
+
+L'option `--ignore-missing` est nécessaire car le fichier `SHA256SUMS` couvre l'ensemble des formats publiés par le projet, dont l'AppImage, les paquets RPM et les variantes ARM que je n'ai pas téléchargés. Sans elle, la commande signalerait ces absences comme des échecs.
+
+Les deux empreintes correspondent. Elles ont par ailleurs été recoupées avec celles publiées sur la page de la version, de façon à ne pas se contenter d'un fichier d'empreintes téléchargé depuis la même source que les paquets.
+
+![Vérification des empreintes SHA-256](images/etape6-verification-integrite.png)
+
+### 7.4 Installation
+
+Les deux paquets sont installés en une seule commande, ce qui permet à APT de résoudre leurs dépendances ensemble.
+
+```bash
+sudo apt install -y ./clamui_0.6.0_amd64.deb ./clamui-privileged-helper_0.6.0_amd64.deb
+```
+
+**Résultat observé :** deux paquets installés, 14,2 Mo, aucune dépendance manquante. Les déclencheurs de `desktop-file-utils`, `hicolor-icon-theme` et `gnome-menus` sont exécutés : c'est ce qui intègre l'application au menu du bureau GNOME.
+
+Le choix de la version 0.6.0 est validé par ce résultat : aucune erreur liée à `policykit-1`, contrairement à ce que produirait la version 0.2.0 du tutoriel sur Debian 13.
+
+La commande se termine par un avertissement sans conséquence :
+
+```
+Notification : Le téléchargement est effectué en dehors du bac à sable en tant que
+superutilisateur car le fichier n'est pas accessible par l'utilisateur « _apt »
+```
+
+APT utilise normalement un compte non privilégié, `_apt`, pour récupérer les fichiers, par précaution. Ce compte n'ayant pas accès au dossier personnel de l'utilisateur, APT signale qu'il a lu les paquets directement en tant que `root`. C'est une information, pas une erreur, et elle disparaîtrait si les fichiers étaient placés dans un répertoire comme `/tmp`.
+
+![Installation des paquets ClamUI](images/etape6-installation.png)
+
+### 7.5 Préparation du test depuis l'interface
+
+Un fichier de test est créé dans `~/Documents`, répertoire qui n'est pas surveillé en temps réel. Il reste donc en place jusqu'à ce qu'une analyse soit déclenchée, ce qui permettra de la lancer depuis l'interface graphique.
+
+```bash
+printf '%s%s' 'X5O!P%@AP[4\PZX54(P^)7CC)7}$EICAR-ST' 'ANDARD-ANTIVIRUS-TEST-FILE!$H+H*' > ~/Documents/test-clamui.txt
+```
+
+![Préparation du fichier de test](images/etape6-fichier-test.png)
+
+### 7.6 Prise en main de l'interface
+
+_Section à compléter : captures et commentaires de l'accueil, de la quarantaine, d'une analyse lancée depuis l'interface, de la planification et de l'audit de sécurité._
 
 ---
 

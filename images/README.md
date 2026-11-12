@@ -41,9 +41,15 @@ Les captures de ce TP sont déposées dans ce dossier et appelées depuis [le ra
 | `etape5-timer-actif.png` | `systemctl list-timers` avec la prochaine exécution | **Produite** |
 | `etape5-fichier-test.png` | Création du fichier de test hors du répertoire surveillé | **Produite** |
 | `etape5-resultat-scan.png` | Statut du service, journal dédié et quarantaine | **Produite** |
+| `etape6-telechargement.png` | Récupération des deux paquets et du fichier d'empreintes | **Produite** |
+| `etape6-verification-integrite.png` | Contrôle des empreintes SHA-256 | **Produite** |
+| `etape6-installation.png` | Installation par APT des paquets locaux | **Produite** |
+| `etape6-fichier-test.png` | Préparation du fichier de test hors temps réel | **Produite** |
 | `etape6-clamui-accueil.png` | Tableau de bord ClamUI, état du moteur et des signatures | À produire |
+| `etape6-clamui-quarantaine.png` | Quarantaine vue depuis l'interface | À produire |
 | `etape6-clamui-scan.png` | Résultat d'une analyse lancée depuis ClamUI | À produire |
 | `etape6-clamui-planification.png` | Écran de planification des analyses | À produire |
+| `etape6-clamui-audit.png` | Audit de sécurité du système | À produire |
 
 Ce tableau est mis à jour au fur et à mesure : une ligne passe à « Produite » seulement quand le fichier est présent dans ce dossier.
 
