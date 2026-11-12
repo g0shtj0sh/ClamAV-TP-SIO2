@@ -970,7 +970,104 @@ printf '%s%s' 'X5O!P%@AP[4\PZX54(P^)7CC)7}$EICAR-ST' 'ANDARD-ANTIVIRUS-TEST-FILE
 
 ### 7.6 Prise en main de l'interface
 
-_Section à compléter : captures et commentaires de l'accueil, de la quarantaine, d'une analyse lancée depuis l'interface, de la planification et de l'audit de sécurité._
+L'application se lance depuis le menu des applications GNOME. Sa barre latérale organise les fonctions en huit sections : Analyse, Base virale, Journaux, Composants, Quarantaine, Statistiques, Audit et Réseau.
+
+#### Composants
+
+L'écran *Composants* dresse l'inventaire des outils ClamAV présents sur la machine. Il détecte correctement la famille de système hôte (`debian`) et affiche, pour chaque outil, sa version.
+
+| Composant | Binaire | État rapporté |
+| --- | --- | --- |
+| Analyseur antivirus | `clamscan` | Installé, `ClamAV 1.4.3/28181/Thu Nov 12 07:27:14 2026` |
+| Outil de mise à jour | `freshclam` | Installé, même version |
+| Client du démon | `clamdscan` | Installé, même version |
+| Démon d'analyse | `clamd` | **En cours d'exécution**, version indisponible |
+
+Ces valeurs concordent exactement avec celles relevées en ligne de commande aux étapes 1 et 2, ce qui confirme que l'interface interroge bien la même installation. La mention « version indisponible » pour `clamd` n'est pas un défaut : contrairement aux trois autres, le démon ne s'interroge pas par une option en ligne de commande, et l'interface se replie sur l'état du service — qu'elle rapporte correctement comme actif.
+
+Un encadré précise par ailleurs que « ClamUI n'installe jamais de paquets ni ne démarre de services à votre place » : l'interface se contente de piloter et de proposer des commandes à copier. C'est cohérent avec sa nature de surcouche, décrite en 7.1.
+
+![Inventaire des composants ClamAV](images/etape6-clamui-composants.png)
+
+#### Base virale
+
+Cet écran reprend l'état des signatures et permet de déclencher une mise à jour. Il rapporte le service `freshclam` comme **actif avec le PID 5926**, exactement l'identifiant relevé par `ps` à l'étape 2, et la base de données comme disponible « il y a 0 jour ».
+
+Deux modes de mise à jour sont proposés : une mise à jour normale, qui demande au service actif de travailler, et une mise à jour forcée qui contourne le service et prépare des bases de remplacement avant de les mettre en service, avec restauration des précédentes en cas d'échec. La mise à jour normale lancée depuis l'interface retourne `État : success` et « 0 base de données mise à jour », ce qui est attendu puisque les bases dataient du matin même.
+
+![État de la base virale](images/etape6-clamui-base-virale.png)
+
+#### Journaux
+
+L'historique recense les opérations réalisées depuis l'interface, chacune avec son horodatage et son verdict. Il distingue l'historique propre à ClamUI de l'onglet « Démon ClamAV », qui donne accès au journal du démon — celui-là même consulté en ligne de commande à l'étape 3.
+
+![Historique des journaux](images/etape6-clamui-journaux.png)
+
+#### Audit de sécurité du système
+
+C'est la fonction qui dépasse le strict cadre de l'antivirus. L'audit examine la configuration de sécurité du poste et classe ses contrôles en quatre catégories.
+
+| Catégorie | Nombre |
+| --- | --- |
+| Problèmes | **0** |
+| Avertissements | 3 |
+| Contrôles satisfaits | 7 |
+| Contrôles non applicables | 12 |
+
+Les quatre contrôles relatifs à ClamAV sont tous satisfaits : installation détectée, base virale à jour, démon en cours d'exécution et mises à jour automatiques actives. Ils valident par un chemin indépendant l'ensemble du travail des étapes 1 et 2.
+
+Les avertissements portent sur le **pare-feu** : l'état d'UFW n'a pas pu être examiné, et aucun Firewalld n'est détecté. Ce constat est exact et mérite d'être retenu plutôt que minimisé — aucun pare-feu local n'est configuré sur ce poste. Dans le contexte JCorp, le filtrage repose aujourd'hui sur le pare-feu activé au niveau de la carte réseau de la VM dans Proxmox, et non sur le système invité. L'ajout d'un pare-feu local constituerait un durcissement complémentaire, qui sort du périmètre de ce TP mais qui est noté comme piste d'amélioration.
+
+![Audit de sécurité du système](images/etape6-clamui-audit.png)
+
+#### Connexions réseau
+
+Cet écran liste les ports en écoute et les connexions établies à un instant donné. Il permet un contrôle intéressant : **aucun port n'est associé au démon ClamAV**, ce qui confirme par un second moyen l'absence de directive `TCPSocket` relevée à l'étape 2. Le démon n'est joignable que par sa socket locale.
+
+Les connexions visibles correspondent au fonctionnement normal du poste : un échange UDP entre `10.2.101.11:68` et `10.2.101.1:67`, soit le client DHCP dialoguant avec la passerelle, et une écoute sur le port 5353 utilisé par la découverte de services du réseau local.
+
+![Connexions réseau](images/etape6-clamui-reseau.png)
+
+### 7.7 Deux écarts constatés entre l'interface et la ligne de commande
+
+La prise en main fait apparaître deux différences de comportement qu'il serait trompeur de passer sous silence. Elles ne traduisent pas un dysfonctionnement, mais une séparation entre ce que pilote l'interface et ce que font les services configurés aux étapes 4 et 5.
+
+#### Écart 1 — La quarantaine de l'interface est vide
+
+L'écran *Quarantaine* annonce « 0 élément » et « Aucun fichier en quarantaine », alors que le dossier `/var/quarantine` contient bien les deux fichiers mis à l'écart aux étapes 4 et 5, comme l'a confirmé `sudo ls -l /var/quarantine/`.
+
+L'explication tient à l'architecture de l'outil : **ClamUI gère son propre espace de quarantaine**, alimenté par les détections qu'il réalise lui-même, et dans lequel il conserve les métadonnées nécessaires à une restauration sécurisée — notamment l'empreinte du fichier, qui lui permet de vérifier qu'un élément restauré est bien celui qui avait été isolé. Il ne lit pas le répertoire `/var/quarantine` que nous avons imposé à `clamonacc` et au service planifié par l'option `--move`.
+
+**Il existe donc deux quarantaines distinctes sur ce poste :**
+
+| Quarantaine | Alimentée par | Consultable depuis |
+| --- | --- | --- |
+| `/var/quarantine` | `clamonacc` (temps réel) et le service planifié | Ligne de commande, en tant que `root` |
+| Espace interne de ClamUI | Détections réalisées depuis l'interface | L'interface uniquement |
+
+C'est un point d'exploitation important : un administrateur qui ne consulterait que l'interface **passerait à côté des détections faites par les services automatiques**. Deux solutions sont envisageables pour un poste réellement exploité : configurer ClamUI pour qu'il utilise `/var/quarantine`, si l'application le permet, ou retenir une seule des deux chaînes de traitement plutôt que de les faire coexister. Je retiens la seconde approche comme la plus saine : les services systemd assurent la protection de fond, et l'interface sert à la consultation et aux analyses ponctuelles.
+
+![Quarantaine vue depuis l'interface](images/etape6-clamui-quarantaine.png)
+
+#### Écart 2 — Une analyse « saine » qui n'a rien analysé
+
+L'écran *Analyse* affiche « Analyse terminée — aucune menace détectée » avec le verdict **Sain**. Mais la ligne juste en dessous indique : **« 0 fichier analysé, 0 menace »**.
+
+Le profil utilisé, « Analyse rapide », cible `/home/administrateur/Téléchargements`. Or ce répertoire est **vide** depuis l'étape 4, puisque le fichier de test qui s'y trouvait a été déplacé en quarantaine par la protection en temps réel. L'analyse n'avait donc rien à examiner, et le fichier `test-clamui.txt` préparé en 7.5 se trouve dans `~/Documents`, en dehors de la cible du profil.
+
+L'écran *Statistiques* reprend le même constat et le présente comme un état rassurant : « Le système est protégé », avec 1 analyse, **0 fichier analysé** et 0 menace détectée.
+
+C'est une leçon qui dépasse l'outil : **un verdict « sain » n'a de valeur que rapporté au périmètre réellement analysé.** Un tableau de bord affichant « protégé » après une analyse ayant porté sur zéro fichier donne une fausse assurance. En exploitation, le nombre de fichiers analysés est un indicateur au moins aussi important que le nombre de menaces trouvées : un effondrement soudain de ce compteur signale un problème de configuration, pas une amélioration de la sécurité.
+
+Cet écart est corrigé en 7.8 par une analyse portant sur une cible contenant effectivement un fichier à détecter.
+
+![Analyse rapide sur un répertoire vide](images/etape6-clamui-analyse.png)
+
+![Statistiques, un système annoncé protégé après zéro fichier analysé](images/etape6-clamui-statistiques.png)
+
+### 7.8 Analyse d'une cible non vide depuis l'interface
+
+_Section à compléter : analyse de `~/Documents` depuis l'interface, détection de `test-clamui.txt` et traitement de l'élément détecté._
 
 ---
 
@@ -993,8 +1090,11 @@ Tableau de validation à compléter au fur et à mesure. Un contrôle n'est déc
 | 7 | Journalisation | Détection tracée dans le journal correspondant | **Conforme** — empreinte MD5 et taille dans `clamav.log` ; `clamscan` ne journalise pas sans `--log` | `etape3-suppression-journal.png` |
 | 8 | Analyse planifiée | *Timer* actif et prochaine exécution affichée | **Conforme** — dimanche 15 novembre 2026 à 02:00 CET | `etape5-timer-actif.png` |
 | 8 bis | Exécution de l'analyse | Détection et mise en quarantaine | **Conforme** — 73 fichiers analysés, `eicar.txt.001` en quarantaine | `etape5-resultat-scan.png` |
-| 9 | Interface graphique | ClamUI lancé, état du moteur et des signatures affiché | _à renseigner_ | _à produire_ |
-| 10 | Scan depuis l'interface | Analyse déclenchée et résultat affiché dans ClamUI | _à renseigner_ | _à produire_ |
+| 9 | Interface graphique | ClamUI lancé, état du moteur et des signatures affiché | **Conforme** — version et base identiques aux relevés en ligne de commande | `etape6-clamui-composants.png` |
+| 9 bis | Audit de sécurité | Diagnostic du poste affiché | **Conforme** — 0 problème, 3 avertissements sur le pare-feu | `etape6-clamui-audit.png` |
+| 9 ter | Absence d'écoute réseau | Aucun port associé au démon | **Conforme** — confirme le contrôle 4 bis par un second moyen | `etape6-clamui-reseau.png` |
+| 10 | Scan depuis l'interface | Analyse déclenchée et menace détectée | **Non concluant** — analyse réalisée sur un répertoire vide, 0 fichier analysé ; à refaire sur une cible non vide | `etape6-clamui-analyse.png` |
+| 10 bis | Cohérence des quarantaines | Les détections automatiques visibles dans l'interface | **Non conforme** — l'interface gère une quarantaine distincte de `/var/quarantine` ; écart documenté en 7.7 | `etape6-clamui-quarantaine.png` |
 
 ---
 

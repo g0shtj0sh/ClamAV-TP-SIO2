@@ -45,11 +45,15 @@ Les captures de ce TP sont déposées dans ce dossier et appelées depuis [le ra
 | `etape6-verification-integrite.png` | Contrôle des empreintes SHA-256 | **Produite** |
 | `etape6-installation.png` | Installation par APT des paquets locaux | **Produite** |
 | `etape6-fichier-test.png` | Préparation du fichier de test hors temps réel | **Produite** |
-| `etape6-clamui-accueil.png` | Tableau de bord ClamUI, état du moteur et des signatures | À produire |
-| `etape6-clamui-quarantaine.png` | Quarantaine vue depuis l'interface | À produire |
-| `etape6-clamui-scan.png` | Résultat d'une analyse lancée depuis ClamUI | À produire |
-| `etape6-clamui-planification.png` | Écran de planification des analyses | À produire |
-| `etape6-clamui-audit.png` | Audit de sécurité du système | À produire |
+| `etape6-clamui-composants.png` | Inventaire des composants ClamAV détectés | **Produite** |
+| `etape6-clamui-base-virale.png` | État des signatures et mise à jour depuis l'interface | **Produite** |
+| `etape6-clamui-journaux.png` | Historique des opérations | **Produite** |
+| `etape6-clamui-quarantaine.png` | Quarantaine de l'interface, vide — écart documenté | **Produite** |
+| `etape6-clamui-statistiques.png` | Système annoncé protégé après zéro fichier analysé | **Produite** |
+| `etape6-clamui-audit.png` | Audit de sécurité du système | **Produite** |
+| `etape6-clamui-reseau.png` | Connexions réseau, absence de port lié au démon | **Produite** |
+| `etape6-clamui-analyse.png` | Analyse rapide sur un répertoire vide | **Produite** |
+| `etape6-clamui-scan-detection.png` | Analyse de `~/Documents` avec détection effective | À produire |
 
 Ce tableau est mis à jour au fur et à mesure : une ligne passe à « Produite » seulement quand le fichier est présent dans ce dossier.
 
