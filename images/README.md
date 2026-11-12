@@ -18,7 +18,7 @@ Les captures de ce TP sont déposées dans ce dossier et appelées depuis [le ra
 | `etape1-installation-paquets.png` | Installation APT des six paquets | **Produite** |
 | `etape1-version-moteur.png` | `clamscan --version` et liste des paquets installés | **Produite** |
 | `etape1-freshclam-controles.png` | Mise à jour des bases, activation du service et contrôles de fin d'étape | **Produite** |
-| `etape2-memoire-vm.png` | Mémoire de la VM 702 dans Proxmox, onglet Matériel | À produire |
+| `etape2-memoire-vm.png` | Configuration matérielle de la VM 702 dans Proxmox | **Produite** |
 | `etape2-memoire-avant.png` | `free -h` avant activation du démon | **Produite** |
 | `etape2-daemon-status.png` | `systemctl status clamav-daemon` | **Produite** |
 | `etape2-processus-memoire.png` | Processus ClamAV et `free -h` après activation | **Produite** |

@@ -7,7 +7,7 @@ Ce dépôt est volontairement séparé de celui de l'infrastructure : [**JCorp-S
 | Document | Contenu | État |
 | --- | --- | --- |
 | [Rapport du TP](Rapport-TP-ClamAV.md) | Déroulé complet, commandes, résultats observés et captures | **Terminé** |
-| [Guide des captures](images/README.md) | Nomenclature des images | 41 captures sur 42 |
+| [Guide des captures](images/README.md) | Nomenclature des images | **Complet**, 44 captures |
 
 ## Contexte
 

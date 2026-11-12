@@ -232,11 +232,16 @@ La protection en temps réel étant un objectif du TP et reposant sur le démon,
 
 | Paramètre | Avant | Après |
 | --- | --- | --- |
-| Mémoire de la VM 702 | 2 Gio | 4,8 Gio |
+| Mémoire allouée à la VM 702 dans Proxmox | 2 Gio | **5,02 Gio** |
+| Mémoire vue par le système | 2 Gio | **4,8 Gio** |
 
-_Capture de la configuration matérielle dans Proxmox à ajouter : `images/etape2-memoire-vm.png`._
+L'écart entre les 5,02 Gio alloués par l'hyperviseur et les 4,8 Gio rapportés par `free -h` est normal : une partie de la mémoire est réservée par le noyau et par le matériel virtuel, et n'apparaît donc pas dans le total utilisable par le système.
 
-La mesure réalisée en 3.5 confirme a posteriori que cette décision était nécessaire.
+La capture de la configuration matérielle confirme par ailleurs les caractéristiques consignées dans la documentation d'architecture de l'infrastructure : 2 vCPU en un socket de deux cœurs de type `x86-64-v2-AES`, BIOS SeaBIOS, machine `i440fx`, contrôleur VirtIO SCSI single, disque de 32 Gio sur le stockage `Raid5-VMs`, et carte réseau VirtIO d'adresse `BC:24:11:A1:7E:96` reliée au pont `vmbr2` avec le **tag VLAN 700** et le pare-feu activé.
+
+La mesure réalisée en 3.5 confirme a posteriori que cette décision de dimensionnement était nécessaire.
+
+![Configuration matérielle de la VM 702 dans Proxmox](images/etape2-memoire-vm.png)
 
 ### 3.3 Relevé de la mémoire avant activation
 
