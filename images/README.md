@@ -23,7 +23,10 @@ Les captures de ce TP sont déposées dans ce dossier et appelées depuis [le ra
 | `etape2-daemon-status.png` | `systemctl status clamav-daemon` | **Produite** |
 | `etape2-processus-memoire.png` | Processus ClamAV et `free -h` après activation | **Produite** |
 | `etape2-socket-locale.png` | Directives de `clamd.conf` et `clamdscan --version` | **Produite** |
-| `etape3-scan-eicar.png` | Détection du fichier de test par `clamscan` | À produire |
+| `etape3-creation-fichiers.png` | Création du faux virus et du fichier témoin | **Produite** |
+| `etape3-scan-eicar.png` | Détection du fichier de test par `clamscan` | **Produite** |
+| `etape3-comparaison-scan.png` | Temps mesurés pour `clamscan` et `clamdscan` | **Produite** |
+| `etape3-suppression-journal.png` | Suppression du fichier détecté et journal du démon | **Produite** |
 | `etape4-temps-reel.png` | Journal `clamonacc` au moment de la détection | À produire |
 | `etape4-quarantaine.png` | Fichier déplacé dans le dossier de quarantaine | À produire |
 | `etape5-timer.png` | `systemctl list-timers` avec la prochaine exécution | À produire |

@@ -365,7 +365,133 @@ C'est la bonne pratique : on ne teste jamais un antivirus avec un vrai échantil
 
 > **Remarque sur ce dépôt :** la chaîne EICAR n'est volontairement pas recopiée telle quelle dans ce rapport, et le fichier `eicar.txt` est exclu par le `.gitignore`. Un dépôt contenant la signature complète serait signalé comme infecté par l'antivirus de tout poste qui le clone. Les commandes du TP reconstituent la chaîne par concaténation, ce qui produit exactement le même fichier au moment de l'exécution.
 
-_Section à compléter à l'étape suivante du TP._
+### 4.2 Préparation des fichiers de test
+
+Je travaille dans un dossier dédié, de façon à ne rien supprimer d'autre lors du test de remédiation, et je crée **deux** fichiers : un faux virus et un fichier sain. Le second sert de témoin : il prouve que l'antivirus distingue les fichiers au lieu de tout signaler.
+
+```bash
+mkdir -p ~/tp-clamav && cd ~/tp-clamav
+printf '%s%s' 'X5O!P%@AP[4\PZX54(P^)7CC)7}$EICAR-ST' 'ANDARD-ANTIVIRUS-TEST-FILE!$H+H*' > eicar.txt
+echo 'Ceci est un fichier sain de test.' > sain.txt ; ls -l
+```
+
+**Résultat observé :** `eicar.txt` de **68 octets** et `sain.txt` de 34 octets, dans `/home/administrateur/tp-clamav`.
+
+La taille de 68 octets est la taille canonique du fichier EICAR, ce qui confirme que la reconstitution par concaténation a bien produit la chaîne attendue.
+
+![Création des fichiers de test](images/etape3-creation-fichiers.png)
+
+### 4.3 Détection sans suppression
+
+Je commence par une analyse qui se contente de signaler, sans rien supprimer.
+
+```bash
+clamscan --infected --recursive ~/tp-clamav
+```
+
+| Option | Effet |
+| --- | --- |
+| `--infected` | N'affiche que les fichiers détectés |
+| `--recursive` | Parcourt les sous-répertoires |
+
+**Résultat observé :**
+
+```
+/home/administrateur/tp-clamav/eicar.txt: Eicar-Test-Signature FOUND
+```
+
+| Indicateur du résumé | Valeur |
+| --- | --- |
+| Signatures connues | 3 628 258 |
+| Version du moteur | 1.4.3 |
+| Répertoires analysés | 1 |
+| Fichiers analysés | 2 |
+| **Fichiers infectés** | **1** |
+| Durée | 15,6 s |
+
+Les deux fichiers ont été analysés et un seul est signalé : `sain.txt` n'apparaît pas, ce qui est le comportement attendu. Le nom de signature renvoyé est `Eicar-Test-Signature`, là où le tutoriel de référence mentionne `Eicar-Signature` : la dénomination a évolué entre les versions de la base, sans conséquence sur la détection.
+
+![Détection du fichier EICAR](images/etape3-scan-eicar.png)
+
+### 4.4 Comparaison de `clamscan` et de `clamdscan`
+
+Le tableau du chapitre 1 oppose les deux outils sur le papier. Je vérifie ici l'écart réellement mesuré sur la machine, sur **le même fichier**.
+
+```bash
+time clamscan ~/tp-clamav/eicar.txt
+time clamdscan --fdpass ~/tp-clamav/eicar.txt
+```
+
+L'option `--fdpass` transmet au démon le descripteur du fichier plutôt que son chemin. Elle est nécessaire ici : le démon tourne sous le compte `clamav` et n'a pas forcément accès au dossier personnel d'un utilisateur, alors que le descripteur, lui, est ouvert par le client qui dispose déjà des droits.
+
+**Résultat observé :**
+
+| Mesure | `clamscan` | `clamdscan --fdpass` |
+| --- | --- | --- |
+| Temps réel | **17,955 s** | **0,045 s** |
+| Temps processeur utilisateur | 16,288 s | 0,011 s |
+| Durée d'analyse annoncée | 17,929 s | 0,014 s |
+| Détection | `Eicar-Test-Signature FOUND` | `Eicar-Test-Signature FOUND` |
+
+Le rapport est d'environ **400 pour 1** sur un fichier de 68 octets.
+
+La sortie de `clamscan` explique précisément d'où vient l'écart, puisqu'elle détaille sa phase de démarrage :
+
+```
+Loading:    14s   3.63M/3.63M sigs
+Compiling:   3s   41/41 tasks
+```
+
+Soit 17 secondes consacrées au **chargement et à la compilation des signatures**, et une fraction de seconde à l'analyse elle-même. `clamscan` refait ce travail à chaque exécution, tandis que `clamdscan` interroge un démon qui a déjà tout en mémoire — ce qui est exactement ce que coûtent les 947 Mio mesurés à l'étape 2.
+
+**Conséquence pratique pour l'exploitation :** le choix entre les deux outils n'est pas une affaire de préférence.
+
+- Une analyse **fréquente ou déclenchée à la demande** doit passer par `clamdscan`, sinon chaque appel paie 17 secondes de chargement. C'est le cas du script lancé toutes les quelques minutes, de l'analyse d'un fichier déposé, ou d'un clic dans une interface graphique.
+- Une analyse **massive et planifiée la nuit** peut utiliser `clamscan` : les 17 secondes de chargement sont négligeables devant la durée totale, et cela évite de maintenir un démon résident de près de 1 Gio sur une machine qui n'en a pas l'usage le reste du temps.
+
+![Comparaison des temps d'analyse](images/etape3-comparaison-scan.png)
+
+### 4.5 Suppression du fichier détecté et journalisation
+
+```bash
+clamscan --infected --remove --recursive ~/tp-clamav ; ls -l ~/tp-clamav
+sudo tail -n 15 /var/log/clamav/clamav.log
+```
+
+L'option `--remove` supprime les fichiers détectés. Elle est employée ici sur un dossier de test ne contenant qu'un faux virus ; en exploitation réelle, on lui préfère `--move` vers une quarantaine, ce qui est mis en place à l'étape suivante.
+
+**Résultat observé :** `eicar.txt: Removed.`, et le `ls` ne laisse plus que `sain.txt`. La détection débouche donc bien sur une remédiation effective, et le fichier sain n'a pas été touché.
+
+#### Observation : toutes les analyses ne sont pas journalisées
+
+Le journal `/var/log/clamav/clamav.log` relevé à l'étape 2 contient bien une trace de détection :
+
+```
+Thu Nov 12 10:01:36 2026 -> /home/administrateur/tp-clamav/eicar.txt:
+Eicar-Test-Signature(44d88612fea8a8f36de82e1278abb02f:68) FOUND
+```
+
+L'entrée précise l'empreinte MD5 du fichier et sa taille en octets, ce qui permet d'identifier précisément l'élément détecté.
+
+Mais en comparant les horodatages, un constat s'impose : **une seule des quatre analyses figure dans ce journal**, celle de 10:01:36, qui correspond exactement à l'exécution de `clamdscan`. Les trois analyses lancées avec `clamscan` (à 10:00:43, 10:01:13 et 10:01:51) n'y apparaissent pas.
+
+L'explication tient à l'architecture décrite au chapitre 1 : ce fichier est le journal **du démon**. `clamscan` est un scanner autonome qui n'a aucun lien avec `clamd` ; il écrit sur la sortie standard et ne journalise que si on le lui demande explicitement avec l'option `--log`.
+
+C'est un point à retenir pour l'exploitation : une détection faite par `clamscan` sans `--log` **ne laisse aucune trace** une fois le terminal fermé. Toute analyse planifiée devra donc écrire dans un fichier dédié, ce que je mets en place à l'étape 5.
+
+Les lignes précédentes du journal, horodatées à 09:56:02, correspondent au démarrage du démon et énumèrent les formats pris en charge : exécutables Windows (`Portable Executable`), `ELF`, courriels, `OLE2`, `PDF`, `SWF`, `HTML`, `XMLDOCS`, `HWP3` et `OneNote`. Le démon signale également une auto-vérification toutes les 3 600 secondes, mécanisme par lequel il recharge ses signatures lorsque `freshclam` en a téléchargé de nouvelles — sans quoi la mise à jour des bases n'atteindrait jamais le processus résident.
+
+![Suppression du fichier détecté et journal du démon](images/etape3-suppression-journal.png)
+
+### 4.6 Contrôles de fin d'étape
+
+| Contrôle | Résultat attendu | Résultat observé | Conforme |
+| --- | --- | --- | --- |
+| Détection | Le faux virus est signalé | `Eicar-Test-Signature FOUND` | Oui |
+| Absence de faux positif | Le fichier sain n'est pas signalé | `sain.txt` jamais détecté ni supprimé | Oui |
+| Remédiation | Le fichier détecté est supprimé | `Removed.`, confirmé par `ls` | Oui |
+| Journalisation | La détection est tracée | Entrée avec empreinte MD5 et taille, pour l'analyse passée par le démon | Oui, avec la réserve ci-dessus |
+| Écart de performance | `clamdscan` nettement plus rapide | 0,045 s contre 17,955 s, soit un rapport de 400 | Oui |
 
 ---
 
@@ -417,9 +543,11 @@ Tableau de validation à compléter au fur et à mesure. Un contrôle n'est déc
 | 3 | Mise à jour automatique | `clamav-freshclam` `enabled` et `active` | **Conforme** | `etape1-freshclam-controles.png` |
 | 4 | Démon opérationnel | `clamav-daemon` `active (running)` | **Conforme** — PID 6348, 947,4 Mio, sous le compte `clamav` | `etape2-daemon-status.png` |
 | 4 bis | Exposition réseau du démon | Aucune écoute TCP | **Conforme** — socket locale uniquement | `etape2-socket-locale.png` |
-| 5 | Détection à la demande | EICAR détecté par `clamscan` | _à renseigner_ | _à produire_ |
+| 5 | Détection à la demande | EICAR détecté par `clamscan` | **Conforme** — `Eicar-Test-Signature FOUND`, fichier sain non signalé | `etape3-scan-eicar.png` |
+| 5 bis | Remédiation | Le fichier détecté est supprimé | **Conforme** — `Removed.` | `etape3-suppression-journal.png` |
+| 5 ter | Écart `clamscan` / `clamdscan` | Le client du démon est plus rapide | **Conforme** — 0,045 s contre 17,955 s | `etape3-comparaison-scan.png` |
 | 6 | Détection en temps réel | EICAR détecté et déplacé en quarantaine dès son écriture | _à renseigner_ | _à produire_ |
-| 7 | Journalisation | Détection tracée dans le journal correspondant | _à renseigner_ | _à produire_ |
+| 7 | Journalisation | Détection tracée dans le journal correspondant | **Conforme** — empreinte MD5 et taille dans `clamav.log` ; `clamscan` ne journalise pas sans `--log` | `etape3-suppression-journal.png` |
 | 8 | Analyse planifiée | *Timer* actif et prochaine exécution affichée | _à renseigner_ | _à produire_ |
 | 9 | Interface graphique | ClamUI lancé, état du moteur et des signatures affiché | _à renseigner_ | _à produire_ |
 | 10 | Scan depuis l'interface | Analyse déclenchée et résultat affiché dans ClamUI | _à renseigner_ | _à produire_ |
